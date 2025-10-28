@@ -27,7 +27,6 @@
 - `id` UUID (PK)
 - `name` VARCHAR
 - `address` TEXT
-- `capacity` INT ≥ 0
 - `createdAt`, `updatedAt`
 
 ### `event`

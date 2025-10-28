@@ -5,7 +5,7 @@ type FeedEntryType = 'COMMENT' | 'CHECKIN' | 'PHOTO';
 export interface FeedEntry {
   type: FeedEntryType;
   payload: Record<string, unknown>;
-  ts: Date;
+  ts: Date | string;
 }
 
 export interface EventFeedDocument extends mongoose.Document {

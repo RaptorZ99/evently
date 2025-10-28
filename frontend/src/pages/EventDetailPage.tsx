@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   appendFeedEntry,
+  createUser,
+  deleteEvent,
   fetchAnalytics,
   fetchEventDetail,
   fetchEventFeed,
@@ -10,7 +12,7 @@ import {
   issueTicket,
   registerForEvent,
 } from '../api';
-import type { AnalyticsResponse, EventDetail, FeedEntry, User } from '../types';
+import type { AnalyticsResponse, EventDetail, FeedEntry, FeedEntryInput, User, UserRole } from '../types';
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
@@ -27,34 +29,41 @@ function formatDate(value: string) {
 
 function renderFeedEntry(entry: FeedEntry, index: number) {
   const timestamp = new Date(entry.ts).toLocaleString();
-  const payload = entry.payload ?? {};
 
   switch (entry.type) {
-    case 'COMMENT':
+    case 'COMMENT': {
+      const { message, author } = entry.payload;
       return (
         <li key={`${entry.ts}-${index}`} className="rounded border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-700">{(payload.message as string) ?? 'Commentaire'}</p>
-          <p className="mt-2 text-xs text-slate-500">
-            {(payload.author as string) ?? 'Anonyme'} · {timestamp}
-          </p>
+          <p className="text-sm text-slate-700">{message}</p>
+          <p className="mt-2 text-xs text-slate-500">{author ?? 'Anonyme'} · {timestamp}</p>
         </li>
       );
-    case 'CHECKIN':
+    }
+    case 'CHECKIN': {
+      const { attendee, source } = entry.payload;
       return (
         <li key={`${entry.ts}-${index}`} className="rounded border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
           <p className="text-sm font-medium text-emerald-700">Arrivée enregistrée</p>
-          <p className="text-sm text-emerald-700">
-            {(payload?.attendee as { name?: string })?.name ?? 'Participant'} · {timestamp}
-          </p>
+          <p className="text-sm text-emerald-700">{attendee.name}{attendee.email ? ` · ${attendee.email}` : ''}</p>
+          <p className="mt-1 text-xs text-emerald-600">{source ? `Source: ${source} · ` : ''}{timestamp}</p>
         </li>
       );
-    default:
+    }
+    case 'PHOTO': {
+      const { url, caption } = entry.payload;
       return (
-        <li key={`${entry.ts}-${index}`} className="rounded border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-slate-700">{entry.type}</p>
-          <p className="mt-2 text-xs text-slate-500">{timestamp}</p>
+        <li key={`${entry.ts}-${index}`} className="space-y-2 rounded border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="overflow-hidden rounded">
+            <img src={url} alt={caption ?? 'Photo'} className="h-48 w-full object-cover" />
+          </div>
+          {caption && <p className="text-sm text-slate-700">{caption}</p>}
+          <p className="text-xs text-slate-500">{timestamp}</p>
         </li>
       );
+    }
+    default:
+      return null;
   }
 }
 
@@ -64,6 +73,7 @@ interface Toast {
 }
 
 export default function EventDetailPage() {
+  const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [feed, setFeed] = useState<FeedEntry[]>([]);
@@ -72,10 +82,20 @@ export default function EventDetailPage() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedRegistrationId, setSelectedRegistrationId] = useState('');
   const [ticketPrice, setTicketPrice] = useState('49.00');
-  const [comment, setComment] = useState('');
+  const [feedType, setFeedType] = useState<'COMMENT' | 'CHECKIN' | 'PHOTO'>('COMMENT');
+  const [feedComment, setFeedComment] = useState({ message: '' });
+  const [feedCheckin, setFeedCheckin] = useState({ name: '', email: '', source: '' });
+  const [feedPhoto, setFeedPhoto] = useState({ url: '', caption: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [newParticipant, setNewParticipant] = useState<{ name: string; email: string; role: UserRole }>({
+    name: '',
+    email: '',
+    role: 'USER',
+  });
+  const [creatingParticipant, setCreatingParticipant] = useState(false);
+  const [deletingEvent, setDeletingEvent] = useState(false);
 
   const pendingRegistrations = useMemo(
     () => event?.registrations.filter((registration) => registration.status !== 'CANCELLED') ?? [],
@@ -103,10 +123,13 @@ export default function EventDetailPage() {
       setEvent(eventResponse);
       setFeed(feedResponse.entries ?? []);
       setAnalytics(analyticsResponse);
-      setUsers(usersResponse);
+      const sortedUsers = [...usersResponse].sort((a, b) => a.name.localeCompare(b.name));
+      setUsers(sortedUsers);
 
-      if (!selectedUserId && usersResponse.length > 0) {
-        setSelectedUserId(usersResponse[0].id);
+      if (!selectedUserId || !sortedUsers.find((user) => user.id === selectedUserId)) {
+        if (sortedUsers.length > 0) {
+          setSelectedUserId(sortedUsers[0].id);
+        }
       }
 
       if (!selectedRegistrationId && eventResponse.registrations.length > 0) {
@@ -176,25 +199,120 @@ export default function EventDetailPage() {
     }
   }
 
-  async function handleAddComment(event: FormEvent) {
+  async function handleCreateParticipant(event: FormEvent) {
     event.preventDefault();
-    if (!id || comment.trim().length === 0) {
+    if (!newParticipant.name.trim() || !newParticipant.email.trim()) {
+      showToast({ type: 'error', message: 'Nom et email requis pour créer un participant.' });
+      return;
+    }
+
+    setCreatingParticipant(true);
+    try {
+      const created = await createUser({
+        name: newParticipant.name.trim(),
+        email: newParticipant.email.trim().toLowerCase(),
+        role: newParticipant.role,
+      });
+
+      setUsers((current) => {
+        const next = [...current, created].sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+      setSelectedUserId(created.id);
+      setNewParticipant({ name: '', email: '', role: 'USER' });
+      showToast({ type: 'success', message: 'Participant créé.' });
+    } catch (err) {
+      showToast({ type: 'error', message: err instanceof Error ? err.message : 'Impossible de créer le participant' });
+    } finally {
+      setCreatingParticipant(false);
+    }
+  }
+
+  async function handleSubmitFeed(event: FormEvent) {
+    event.preventDefault();
+    if (!id) return;
+
+    const selectedUser = users.find((user) => user.id === selectedUserId);
+    let entry: FeedEntryInput | null = null;
+
+    if (feedType === 'COMMENT') {
+      const message = feedComment.message.trim();
+      if (!message) {
+        showToast({ type: 'error', message: 'Le message du commentaire est requis.' });
+        return;
+      }
+      entry = {
+        type: 'COMMENT',
+        payload: {
+          message,
+          author: selectedUser?.name,
+        },
+      };
+    } else if (feedType === 'CHECKIN') {
+      const attendeeName = feedCheckin.name.trim() || selectedUser?.name || '';
+      if (!attendeeName) {
+        showToast({ type: 'error', message: 'Le nom du participant est requis pour un check-in.' });
+        return;
+      }
+      const email = feedCheckin.email.trim() || selectedUser?.email;
+      entry = {
+        type: 'CHECKIN',
+        payload: {
+          attendee: {
+            name: attendeeName,
+            email: email || undefined,
+          },
+          source: feedCheckin.source.trim() || undefined,
+        },
+      };
+    } else {
+      const url = feedPhoto.url.trim();
+      if (!url) {
+        showToast({ type: 'error', message: 'L’URL de la photo est requise.' });
+        return;
+      }
+      entry = {
+        type: 'PHOTO',
+        payload: {
+          url,
+          caption: feedPhoto.caption.trim() || undefined,
+        },
+      };
+    }
+
+    if (!entry) {
       return;
     }
 
     try {
-      await appendFeedEntry(id, {
-        type: 'COMMENT',
-        payload: {
-          message: comment.trim(),
-          author: users.find((user) => user.id === selectedUserId)?.name ?? 'Anonyme',
-        },
-      });
-      setComment('');
+      await appendFeedEntry(id, entry);
+      if (feedType === 'COMMENT') {
+        setFeedComment({ message: '' });
+      } else if (feedType === 'CHECKIN') {
+        setFeedCheckin({ name: '', email: '', source: '' });
+      } else {
+        setFeedPhoto({ url: '', caption: '' });
+      }
       await refreshFeed();
-      showToast({ type: 'success', message: 'Commentaire ajouté.' });
+      showToast({ type: 'success', message: 'Entrée ajoutée.' });
     } catch (err) {
-      showToast({ type: 'error', message: err instanceof Error ? err.message : 'Impossible d\'ajouter le commentaire' });
+      showToast({ type: 'error', message: err instanceof Error ? err.message : 'Impossible d\'ajouter au flux' });
+    }
+  }
+
+  async function handleDeleteCurrentEvent() {
+    if (!id) return;
+    if (!window.confirm('Supprimer cet événement ? Cette action est définitive.')) {
+      return;
+    }
+
+    setDeletingEvent(true);
+    try {
+      await deleteEvent(id);
+      navigate('/');
+    } catch (err) {
+      setDeletingEvent(false);
+      showToast({ type: 'error', message: err instanceof Error ? err.message : 'Impossible de supprimer l\'événement' });
     }
   }
 
@@ -208,9 +326,19 @@ export default function EventDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold text-slate-900">{event.title}</h1>
-        {event.description && <p className="text-sm text-slate-600">{event.description}</p>}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold text-slate-900">{event.title}</h1>
+          {event.description && <p className="text-sm text-slate-600">{event.description}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={handleDeleteCurrentEvent}
+          disabled={deletingEvent}
+          className="inline-flex items-center justify-center rounded border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          Supprimer l’événement
+        </button>
       </div>
 
       {toast && (
@@ -234,7 +362,50 @@ export default function EventDetailPage() {
         <DetailRow label="Inscriptions" value={`${event.registrations.length} / ${event.capacity}`} />
       </section>
 
-      <section className="grid gap-6 md:grid-cols-2">
+      <section className="grid gap-6 md:grid-cols-3">
+        <form onSubmit={handleCreateParticipant} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold">Créer un participant</h2>
+          <label className="block text-sm font-medium text-slate-700">
+            Nom
+            <input
+              value={newParticipant.name}
+              onChange={(event) => setNewParticipant((current) => ({ ...current, name: event.target.value }))}
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              placeholder="Nom complet"
+              required
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-700">
+            Email
+            <input
+              type="email"
+              value={newParticipant.email}
+              onChange={(event) => setNewParticipant((current) => ({ ...current, email: event.target.value }))}
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              placeholder="email@example.com"
+              required
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-700">
+            Rôle
+            <select
+              value={newParticipant.role}
+              onChange={(event) => setNewParticipant((current) => ({ ...current, role: event.target.value as UserRole }))}
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            >
+              <option value="USER">Participant</option>
+              <option value="ADMIN">Administrateur</option>
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={creatingParticipant}
+            className="w-full rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            Ajouter le participant
+          </button>
+        </form>
+
         <form onSubmit={handleRegistration} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Inscrire un participant</h2>
           <label className="block text-sm font-medium text-slate-700">
@@ -251,7 +422,11 @@ export default function EventDetailPage() {
               ))}
             </select>
           </label>
-          <button type="submit" className="w-full rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+          <button
+            type="submit"
+            disabled={!selectedUserId}
+            className="w-full rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
             S&apos;inscrire
           </button>
         </form>
@@ -300,17 +475,89 @@ export default function EventDetailPage() {
       <section className="grid gap-6 md:grid-cols-2">
         <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold">Flux d&apos;activité</h2>
-          <form onSubmit={handleAddComment} className="space-y-3">
+          <form onSubmit={handleSubmitFeed} className="space-y-3">
             <label className="block text-sm font-medium text-slate-700">
-              Nouveau commentaire
-              <textarea
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
+              Type d&apos;entrée
+              <select
+                value={feedType}
+                onChange={(event) => setFeedType(event.target.value as 'COMMENT' | 'CHECKIN' | 'PHOTO')}
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                rows={3}
-                placeholder="Partager une actualité..."
-              />
+              >
+                <option value="COMMENT">Commentaire</option>
+                <option value="CHECKIN">Check-in</option>
+                <option value="PHOTO">Photo</option>
+              </select>
             </label>
+
+            {feedType === 'COMMENT' && (
+              <label className="block text-sm font-medium text-slate-700">
+                Message
+                <textarea
+                  value={feedComment.message}
+                  onChange={(event) => setFeedComment({ message: event.target.value })}
+                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  rows={3}
+                  placeholder="Partager une actualité..."
+                />
+              </label>
+            )}
+
+            {feedType === 'CHECKIN' && (
+              <div className="grid gap-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Nom du participant
+                  <input
+                    value={feedCheckin.name}
+                    onChange={(event) => setFeedCheckin((current) => ({ ...current, name: event.target.value }))}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    placeholder="Nom"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Email (optionnel)
+                  <input
+                    type="email"
+                    value={feedCheckin.email}
+                    onChange={(event) => setFeedCheckin((current) => ({ ...current, email: event.target.value }))}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    placeholder="email@example.com"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Source (optionnel)
+                  <input
+                    value={feedCheckin.source}
+                    onChange={(event) => setFeedCheckin((current) => ({ ...current, source: event.target.value }))}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    placeholder="Ex: QR, Borne..."
+                  />
+                </label>
+              </div>
+            )}
+
+            {feedType === 'PHOTO' && (
+              <div className="grid gap-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  URL de la photo
+                  <input
+                    value={feedPhoto.url}
+                    onChange={(event) => setFeedPhoto((current) => ({ ...current, url: event.target.value }))}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    placeholder="https://exemple.com/image.jpg"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Légende (optionnel)
+                  <input
+                    value={feedPhoto.caption}
+                    onChange={(event) => setFeedPhoto((current) => ({ ...current, caption: event.target.value }))}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    placeholder="Description de la photo"
+                  />
+                </label>
+              </div>
+            )}
+
             <button type="submit" className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
               Publier
             </button>

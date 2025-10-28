@@ -1,7 +1,8 @@
 import { Prisma } from '@prisma/client';
-import { prisma } from '../../config/db';
+import { connectMongo, prisma } from '../../config/db';
 import { HttpError } from '../../utils/httpError';
 import { createEventSchema } from './event.schema';
+import { getCheckinModel, getEventFeedModel } from '../feeds/feed.model';
 
 export async function createEvent(input: unknown) {
   const data = createEventSchema.parse(input);
@@ -41,7 +42,10 @@ export async function createEvent(input: unknown) {
       },
     });
 
-    return event;
+    return {
+      ...event,
+      registrationCount: 0,
+    };
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       throw HttpError.conflict('An event with the same title and start date already exists');
@@ -53,7 +57,7 @@ export async function createEvent(input: unknown) {
 
 export async function listEvents(upcoming?: boolean) {
   const now = new Date();
-  return prisma.event.findMany({
+  const events = await prisma.event.findMany({
     where: upcoming ? { startAt: { gte: now } } : undefined,
     include: {
       organizer: true,
@@ -66,6 +70,11 @@ export async function listEvents(upcoming?: boolean) {
     },
     orderBy: { startAt: 'asc' },
   });
+
+  return events.map(({ _count, ...event }) => ({
+    ...event,
+    registrationCount: _count.registrations,
+  }));
 }
 
 export async function getEventById(id: string) {
@@ -91,5 +100,34 @@ export async function getEventById(id: string) {
     throw HttpError.notFound('Event not found');
   }
 
-  return event;
+  const { _count, ...rest } = event;
+  return {
+    ...rest,
+    registrationCount: _count.registrations,
+  };
+}
+
+export async function deleteEvent(id: string) {
+  const existing = await prisma.event.findUnique({ where: { id } });
+  if (!existing) {
+    throw HttpError.notFound('Event not found');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ticket.deleteMany({
+      where: {
+        registration: {
+          eventId: id,
+        },
+      },
+    });
+    await tx.registration.deleteMany({ where: { eventId: id } });
+    await tx.event.delete({ where: { id } });
+  });
+
+  await connectMongo();
+  const EventFeed = getEventFeedModel();
+  const Checkin = getCheckinModel();
+  await EventFeed.deleteOne({ eventId: id });
+  await Checkin.deleteMany({ eventId: id });
 }

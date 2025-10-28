@@ -1,6 +1,6 @@
 import { prisma, connectMongo } from '../../config/db';
 import { HttpError } from '../../utils/httpError';
-import { createFeedEntrySchema, checkinSchema } from './feed.schema';
+import { createFeedEntrySchema } from './feed.schema';
 import { FeedEntry, getCheckinModel, getEventFeedModel } from './feed.model';
 
 export async function getEventFeed(eventId: string) {
@@ -13,7 +13,12 @@ export async function getEventFeed(eventId: string) {
     ts: new Date(entry.ts),
   }));
 
-  const entries = [...rawEntries].sort((a, b) => b.ts.getTime() - a.ts.getTime());
+  const entries = [...rawEntries]
+    .sort((a, b) => (new Date(b.ts).getTime()) - (new Date(a.ts).getTime()))
+    .map((entry) => ({
+      ...entry,
+      ts: new Date(entry.ts).toISOString(),
+    }));
 
   return {
     eventId,
@@ -32,10 +37,11 @@ export async function appendFeedEntry(eventId: string, payload: unknown) {
   const EventFeed = getEventFeedModel();
   const Checkin = getCheckinModel();
 
+  const entryTimestamp = new Date();
   const entry = {
     type: data.type,
     payload: data.payload,
-    ts: new Date(),
+    ts: entryTimestamp,
   };
 
   await EventFeed.findOneAndUpdate(
@@ -52,7 +58,7 @@ export async function appendFeedEntry(eventId: string, payload: unknown) {
   );
 
   if (data.type === 'CHECKIN') {
-    const checkinData = checkinSchema.parse(data.payload);
+    const checkinData = data.payload;
     await Checkin.create({
       eventId,
       attendee: checkinData.attendee,
@@ -61,7 +67,11 @@ export async function appendFeedEntry(eventId: string, payload: unknown) {
     });
   }
 
-  return entry;
+  return {
+    type: entry.type,
+    payload: entry.payload,
+    ts: entryTimestamp.toISOString(),
+  };
 }
 
 export async function getEventAnalytics(eventId: string) {

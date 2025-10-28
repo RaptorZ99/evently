@@ -54,7 +54,6 @@ model Venue {
   id        String   @id @default(uuid())
   name      String
   address   String
-  capacity  Int       @default(0)
   events    Event[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

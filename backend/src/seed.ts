@@ -57,7 +57,6 @@ async function main() {
     data: {
       name: 'Grand Hall',
       address: '123 Main St, Paris',
-      capacity: 200,
     },
   });
 

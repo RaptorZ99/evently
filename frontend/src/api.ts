@@ -3,9 +3,12 @@ import type {
   EventDetail,
   EventSummary,
   FeedEntry,
+  FeedEntryInput,
   FeedResponse,
+  Organizer,
   Registration,
   User,
+  Venue,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
@@ -75,8 +78,29 @@ export function fetchOrganizers(): Promise<Array<{ id: string; name: string }>> 
   return request(`/api/organizers`);
 }
 
-export function fetchVenues(): Promise<Array<{ id: string; name: string; address: string; capacity: number }>> {
+export function fetchVenues(): Promise<Array<{ id: string; name: string; address: string }>> {
   return request(`/api/venues`);
+}
+
+export function createOrganizer(payload: { name: string }): Promise<Organizer> {
+  return request<Organizer>(`/api/organizers`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createVenue(payload: { name: string; address: string }): Promise<Venue> {
+  return request<Venue>(`/api/venues`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createUser(payload: { name: string; email: string; role?: 'ADMIN' | 'USER' }): Promise<User> {
+  return request<User>(`/api/users`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function registerForEvent(eventId: string, payload: { userId: string }): Promise<Registration> {
@@ -97,7 +121,7 @@ export function fetchEventFeed(eventId: string): Promise<FeedResponse> {
   return request<FeedResponse>(`/api/events/${eventId}/feed`);
 }
 
-export function appendFeedEntry(eventId: string, entry: Omit<FeedEntry, 'ts'>): Promise<FeedEntry> {
+export function appendFeedEntry(eventId: string, entry: FeedEntryInput): Promise<FeedEntry> {
   return request<FeedEntry>(`/api/events/${eventId}/feed`, {
     method: 'POST',
     body: JSON.stringify(entry),
@@ -106,4 +130,10 @@ export function appendFeedEntry(eventId: string, entry: Omit<FeedEntry, 'ts'>): 
 
 export function fetchAnalytics(eventId: string): Promise<AnalyticsResponse> {
   return request<AnalyticsResponse>(`/api/events/${eventId}/analytics`);
+}
+
+export function deleteEvent(id: string): Promise<void> {
+  return request<void>(`/api/events/${id}`, {
+    method: 'DELETE',
+  });
 }

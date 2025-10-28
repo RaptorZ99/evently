@@ -1,4 +1,5 @@
 import { prisma } from '../../config/db';
+import { createVenueSchema } from './venue.schema';
 
 export async function listVenues() {
   return prisma.venue.findMany({
@@ -7,7 +8,22 @@ export async function listVenues() {
       id: true,
       name: true,
       address: true,
-      capacity: true,
+    },
+  });
+}
+
+export async function createVenue(input: unknown) {
+  const data = createVenueSchema.parse(input);
+
+  return prisma.venue.create({
+    data: {
+      name: data.name.trim(),
+      address: data.address.trim(),
+    },
+    select: {
+      id: true,
+      name: true,
+      address: true,
     },
   });
 }

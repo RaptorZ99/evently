@@ -63,6 +63,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EventDetail'
+    delete:
+      summary: Supprime un événement et son flux associé
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '204':
+          description: Événement supprimé
   /api/events/{id}/register:
     post:
       summary: Crée une inscription pour un utilisateur
@@ -165,6 +172,33 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/User'
+    post:
+      summary: Crée un utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [ADMIN, USER]
+      responses:
+        '201':
+          description: Utilisateur créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
   /api/organizers:
     get:
       summary: Liste les organisateurs
@@ -177,6 +211,26 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Organizer'
+    post:
+      summary: Crée un organisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Organisateur créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organizer'
   /api/venues:
     get:
       summary: Liste les lieux
@@ -189,6 +243,29 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Venue'
+    post:
+      summary: Crée un lieu
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - address
+              properties:
+                name:
+                  type: string
+                address:
+                  type: string
+      responses:
+        '201':
+          description: Lieu créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venue'
 
 components:
   parameters:
@@ -230,9 +307,6 @@ components:
           type: string
         address:
           type: string
-        capacity:
-          type: integer
-          minimum: 0
     EventSummary:
       type: object
       properties:

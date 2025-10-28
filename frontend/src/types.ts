@@ -19,7 +19,6 @@ export interface Venue {
   id: string;
   name: string;
   address: string;
-  capacity: number;
 }
 
 export interface Registration {
@@ -46,11 +45,34 @@ export interface EventDetail extends EventSummary {
   registrations: Registration[];
 }
 
-export interface FeedEntry {
-  type: 'COMMENT' | 'CHECKIN' | 'PHOTO';
-  payload: Record<string, unknown>;
-  ts: string;
-}
+export type FeedCommentPayload = {
+  message: string;
+  author?: string;
+};
+
+export type FeedCheckinPayload = {
+  attendee: {
+    name: string;
+    email?: string;
+  };
+  source?: string;
+  meta?: Record<string, unknown>;
+};
+
+export type FeedPhotoPayload = {
+  url: string;
+  caption?: string;
+};
+
+export type FeedEntry =
+  | { type: 'COMMENT'; payload: FeedCommentPayload; ts: string }
+  | { type: 'CHECKIN'; payload: FeedCheckinPayload; ts: string }
+  | { type: 'PHOTO'; payload: FeedPhotoPayload; ts: string };
+
+export type FeedEntryInput =
+  | { type: 'COMMENT'; payload: FeedCommentPayload }
+  | { type: 'CHECKIN'; payload: FeedCheckinPayload }
+  | { type: 'PHOTO'; payload: FeedPhotoPayload };
 
 export interface FeedResponse {
   eventId: string;
