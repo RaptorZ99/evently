@@ -4,6 +4,13 @@ export const feedParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
+export const feedEntryParamsSchema = z.object({
+  id: z.string().uuid(),
+  entryId: z
+    .string()
+    .regex(/^[a-f\d]{24}$/, { message: 'entryId must be a valid Mongo ObjectId' }),
+});
+
 const commentPayloadSchema = z.object({
   message: z.string().min(1),
   author: z.string().min(1).optional(),
@@ -37,3 +44,5 @@ export const createFeedEntrySchema = z.discriminatedUnion('type', [
     payload: photoPayloadSchema,
   }),
 ]);
+
+export const updateFeedEntrySchema = createFeedEntrySchema;

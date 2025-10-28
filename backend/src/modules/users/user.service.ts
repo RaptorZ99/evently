@@ -5,7 +5,7 @@ import { createUserSchema } from './user.schema';
 
 export async function listUsers() {
   return prisma.user.findMany({
-    orderBy: { createdAt: 'asc' },
+    orderBy: { name: 'asc' },
     select: {
       id: true,
       name: true,
@@ -37,6 +37,22 @@ export async function createUser(input: unknown) {
       throw HttpError.conflict('Email already exists');
     }
 
+    throw error;
+  }
+}
+
+export async function deleteUser(id: string) {
+  try {
+    await prisma.user.delete({ where: { id } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2003') {
+        throw HttpError.conflict('User is linked to registrations');
+      }
+      if (error.code === 'P2025') {
+        throw HttpError.notFound('User not found');
+      }
+    }
     throw error;
   }
 }

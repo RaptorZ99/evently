@@ -89,6 +89,9 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "User_role_idx" ON "User"("role");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Organizer_name_key" ON "Organizer"("name");
+
+-- CreateIndex
 CREATE INDEX "Event_startAt_idx" ON "Event"("startAt");
 
 -- CreateIndex
@@ -108,6 +111,9 @@ CREATE INDEX "Ticket_registrationId_idx" ON "Ticket"("registrationId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Ticket_registrationId_key" ON "Ticket"("registrationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Venue_name_address_key" ON "Venue"("name", "address");
 
 -- AddForeignKey
 ALTER TABLE "Event" ADD CONSTRAINT "Event_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "Organizer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

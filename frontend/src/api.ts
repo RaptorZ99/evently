@@ -70,6 +70,22 @@ export function createEvent(payload: {
   });
 }
 
+export function updateEvent(id: string, payload: {
+  title: string;
+  description?: string;
+  startAt: string;
+  endAt: string;
+  capacity: number;
+  status?: 'DRAFT' | 'PUBLISHED' | 'CLOSED';
+  organizerId: string;
+  venueId: string;
+}): Promise<EventDetail> {
+  return request<EventDetail>(`/api/events/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchUsers(): Promise<User[]> {
   return request<User[]>(`/api/users`);
 }
@@ -89,6 +105,12 @@ export function createOrganizer(payload: { name: string }): Promise<Organizer> {
   });
 }
 
+export function deleteOrganizer(id: string): Promise<void> {
+  return request<void>(`/api/organizers/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export function createVenue(payload: { name: string; address: string }): Promise<Venue> {
   return request<Venue>(`/api/venues`, {
     method: 'POST',
@@ -96,10 +118,22 @@ export function createVenue(payload: { name: string; address: string }): Promise
   });
 }
 
+export function deleteVenue(id: string): Promise<void> {
+  return request<void>(`/api/venues/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export function createUser(payload: { name: string; email: string; role?: 'ADMIN' | 'USER' }): Promise<User> {
   return request<User>(`/api/users`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export function deleteUser(id: string): Promise<void> {
+  return request<void>(`/api/users/${id}`, {
+    method: 'DELETE',
   });
 }
 
@@ -124,6 +158,13 @@ export function fetchEventFeed(eventId: string): Promise<FeedResponse> {
 export function appendFeedEntry(eventId: string, entry: FeedEntryInput): Promise<FeedEntry> {
   return request<FeedEntry>(`/api/events/${eventId}/feed`, {
     method: 'POST',
+    body: JSON.stringify(entry),
+  });
+}
+
+export function updateFeedEntry(eventId: string, entryId: string, entry: FeedEntryInput): Promise<FeedEntry> {
+  return request<FeedEntry>(`/api/events/${eventId}/feed/${entryId}`, {
+    method: 'PATCH',
     body: JSON.stringify(entry),
   });
 }

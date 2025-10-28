@@ -5,3 +5,7 @@ export const createUserSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   role: z.enum(['ADMIN', 'USER']).optional(),
 });
+
+export const userParamsSchema = z.object({
+  id: z.string().uuid(),
+});

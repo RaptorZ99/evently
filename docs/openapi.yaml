@@ -63,6 +63,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EventDetail'
+    put:
+      summary: Met à jour un événement existant
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - startAt
+                - endAt
+                - capacity
+                - organizerId
+                - venueId
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                  nullable: true
+                startAt:
+                  type: string
+                  format: date-time
+                endAt:
+                  type: string
+                  format: date-time
+                capacity:
+                  type: integer
+                  minimum: 0
+                status:
+                  type: string
+                  enum: [DRAFT, PUBLISHED, CLOSED]
+                organizerId:
+                  type: string
+                  format: uuid
+                venueId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Événement mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetail'
     delete:
       summary: Supprime un événement et son flux associé
       parameters:
@@ -148,6 +196,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FeedEntry'
+  /api/events/{id}/feed/{entryId}:
+    patch:
+      summary: Met à jour une entrée existante du flux MongoDB
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/FeedEntryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedEntryInput'
+      responses:
+        '200':
+          description: Entrée mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedEntry'
   /api/events/{id}/analytics:
     get:
       summary: Statistiques agrégées du flux MongoDB
@@ -199,6 +266,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+  /api/users/{id}:
+    delete:
+      summary: Supprime un utilisateur
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Utilisateur supprimé
   /api/organizers:
     get:
       summary: Liste les organisateurs
@@ -231,6 +306,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Organizer'
+  /api/organizers/{id}:
+    delete:
+      summary: Supprime un organisateur
+      parameters:
+        - $ref: '#/components/parameters/OrganizerId'
+      responses:
+        '204':
+          description: Organisateur supprimé
   /api/venues:
     get:
       summary: Liste les lieux
@@ -266,6 +349,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Venue'
+  /api/venues/{id}:
+    delete:
+      summary: Supprime un lieu
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+      responses:
+        '204':
+          description: Lieu supprimé
 
 components:
   parameters:
@@ -276,6 +367,34 @@ components:
       schema:
         type: string
         format: uuid
+    OrganizerId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VenueId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FeedEntryId:
+      name: entryId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-fA-F0-9]{24}$'
   schemas:
     User:
       type: object

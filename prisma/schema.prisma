@@ -48,6 +48,8 @@ model Organizer {
   events    Event[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([name])
 }
 
 model Venue {
@@ -57,6 +59,8 @@ model Venue {
   events    Event[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([name, address])
 }
 
 model Event {

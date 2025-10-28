@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
-import { createUser, listUsers } from './user.service';
+import { createUser, deleteUser, listUsers } from './user.service';
+import { userParamsSchema } from './user.schema';
 
 export async function handleListUsers(_req: Request, res: Response) {
   const users = await listUsers();
@@ -10,4 +11,10 @@ export async function handleListUsers(_req: Request, res: Response) {
 export async function handleCreateUser(req: Request, res: Response) {
   const user = await createUser(req.body);
   res.status(StatusCodes.CREATED).json(user);
+}
+
+export async function handleDeleteUser(req: Request, res: Response) {
+  const { id } = userParamsSchema.parse(req.params);
+  await deleteUser(id);
+  res.status(StatusCodes.NO_CONTENT).send();
 }

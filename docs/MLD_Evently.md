@@ -3,8 +3,8 @@
 | Table | Description | Clés |
 | ----- | ----------- | ---- |
 | `user` | Utilisateurs finaux (participants ou admins) | PK `id` (UUID), UK `email` |
-| `organizer` | Organisations pouvant publier des événements | PK `id` |
-| `venue` | Lieux physiques des événements | PK `id` |
+| `organizer` | Organisations pouvant publier des événements | PK `id`, UK `name` |
+| `venue` | Lieux physiques des événements | PK `id`, UK `(name, address)` |
 | `event` | Événements gérés dans Evently | PK `id`, FK `organizerId` → `organizer(id)`, FK `venueId` → `venue(id)`, UK `(title, startAt)` |
 | `registration` | Inscriptions d’un utilisateur à un événement | PK `id`, FK `userId` → `user(id)`, FK `eventId` → `event(id)`, UK `(userId, eventId)` |
 | `ticket` | Ticket unique généré pour une inscription | PK `id`, FK `registrationId` → `registration(id)`, UK `registrationId` |
@@ -22,12 +22,14 @@
 - `id` UUID (PK)
 - `name` VARCHAR
 - `createdAt`, `updatedAt`
+- Contrainte : unicité du `name`
 
 ### `venue`
 - `id` UUID (PK)
 - `name` VARCHAR
 - `address` TEXT
 - `createdAt`, `updatedAt`
+- Contrainte : unicité du couple `(name, address)`
 
 ### `event`
 - `id` UUID (PK)

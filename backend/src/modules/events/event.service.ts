@@ -138,3 +138,52 @@ export async function deleteEvent(id: string) {
     Photo.deleteMany({ eventId: id }),
   ]);
 }
+
+export async function updateEvent(id: string, input: unknown) {
+  const data = createEventSchema.parse(input);
+
+  if (data.endAt <= data.startAt) {
+    throw HttpError.badRequest('endAt must be after startAt');
+  }
+
+  const [organizer, venue, existing] = await Promise.all([
+    prisma.organizer.findUnique({ where: { id: data.organizerId } }),
+    prisma.venue.findUnique({ where: { id: data.venueId } }),
+    prisma.event.findUnique({ where: { id } }),
+  ]);
+
+  if (!existing) {
+    throw HttpError.notFound('Event not found');
+  }
+
+  if (!organizer) {
+    throw HttpError.notFound('Organizer not found');
+  }
+
+  if (!venue) {
+    throw HttpError.notFound('Venue not found');
+  }
+
+  try {
+    await prisma.event.update({
+      where: { id },
+      data: {
+        title: data.title,
+        description: data.description,
+        startAt: data.startAt,
+        endAt: data.endAt,
+        capacity: data.capacity,
+        status: data.status ?? existing.status,
+        organizerId: data.organizerId,
+        venueId: data.venueId,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw HttpError.conflict('An event with the same title and start date already exists');
+    }
+    throw error;
+  }
+
+  return getEventById(id);
+}

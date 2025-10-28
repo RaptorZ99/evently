@@ -2,6 +2,7 @@ import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom';
 import EventDetailPage from './pages/EventDetailPage';
 import EventListPage from './pages/EventListPage';
 import NewEventPage from './pages/NewEventPage';
+import SettingsPage from './pages/SettingsPage';
 
 function App() {
   return (
@@ -33,6 +34,16 @@ function App() {
               >
                 Nouveau
               </NavLink>
+              <NavLink
+                to="/settings"
+                className={({ isActive }) =>
+                  `rounded px-3 py-2 transition hover:bg-slate-100 ${
+                    isActive ? 'bg-slate-900 text-white hover:bg-slate-900' : 'text-slate-600'
+                  }`
+                }
+              >
+                Paramètres
+              </NavLink>
             </nav>
           </div>
         </header>
@@ -40,7 +51,10 @@ function App() {
           <Routes>
             <Route path="/" element={<EventListPage />} />
             <Route path="/events/:id" element={<EventDetailPage />} />
-            <Route path="/new-event" element={<NewEventPage />} />
+            <Route path="/new-event" element={<NewEventPage mode="create" />} />
+            <Route path="/events/new" element={<NewEventPage mode="create" />} />
+            <Route path="/events/:id/edit" element={<NewEventPage mode="edit" />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>

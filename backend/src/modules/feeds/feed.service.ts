@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { prisma, connectMongo } from '../../config/db';
 import { HttpError } from '../../utils/httpError';
-import { createFeedEntrySchema } from './feed.schema';
+import { createFeedEntrySchema, updateFeedEntrySchema } from './feed.schema';
 import {
   FeedReference,
   getCheckinModel,
@@ -374,5 +374,120 @@ export async function getEventAnalytics(eventId: string) {
   return {
     byType: feedAggregate,
     checkinsBySource,
+  };
+}
+
+export async function updateFeedEntry(eventId: string, entryId: string, payload: unknown) {
+  let objectId: Types.ObjectId;
+  try {
+    objectId = new Types.ObjectId(entryId);
+  } catch {
+    throw HttpError.badRequest('Invalid feed entry id');
+  }
+
+  const data = updateFeedEntrySchema.parse(payload);
+  await connectMongo();
+  await migrateLegacyFeedEntries(eventId);
+
+  const EventFeed = getEventFeedModel();
+  const feedDocument = await EventFeed.findOne({ eventId, 'entries.itemId': objectId });
+  if (!feedDocument) {
+    throw HttpError.notFound('Feed entry not found');
+  }
+
+  const entryIdString = objectId.toString();
+  const matchingEntry = (feedDocument.entries as FeedReference[]).find((entry) => {
+    if (entry.itemId instanceof Types.ObjectId) {
+      return entry.itemId.equals(objectId);
+    }
+    return String(entry.itemId) === entryIdString;
+  });
+
+  if (!matchingEntry) {
+    throw HttpError.notFound('Feed entry not found');
+  }
+
+  if (matchingEntry.type !== data.type) {
+    throw HttpError.badRequest('Feed entry type mismatch');
+  }
+
+  const ts = matchingEntry.ts instanceof Date ? matchingEntry.ts : new Date(matchingEntry.ts);
+
+  if (data.type === 'COMMENT') {
+    const Comment = getCommentModel();
+    const updated = await Comment.findOneAndUpdate(
+      { _id: objectId, eventId },
+      {
+        message: data.payload.message,
+        author: data.payload.author ?? null,
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      throw HttpError.notFound('Comment not found');
+    }
+
+    return {
+      type: matchingEntry.type,
+      itemId: entryId,
+      payload: {
+        message: updated.message,
+        author: updated.author ?? undefined,
+      },
+      ts: ts.toISOString(),
+    };
+  }
+
+  if (data.type === 'CHECKIN') {
+    const Checkin = getCheckinModel();
+    const updated = await Checkin.findOneAndUpdate(
+      { _id: objectId, eventId },
+      {
+        attendee: data.payload.attendee,
+        source: data.payload.source ?? null,
+        meta: data.payload.meta ?? null,
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      throw HttpError.notFound('Check-in not found');
+    }
+
+    return {
+      type: matchingEntry.type,
+      itemId: entryId,
+      payload: {
+        attendee: updated.attendee,
+        source: updated.source ?? undefined,
+        meta: updated.meta ?? undefined,
+      },
+      ts: ts.toISOString(),
+    };
+  }
+
+  const Photo = getPhotoModel();
+  const updated = await Photo.findOneAndUpdate(
+    { _id: objectId, eventId },
+    {
+      url: data.payload.url,
+      caption: data.payload.caption ?? null,
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw HttpError.notFound('Photo not found');
+  }
+
+  return {
+    type: matchingEntry.type,
+    itemId: entryId,
+    payload: {
+      url: updated.url,
+      caption: updated.caption ?? undefined,
+    },
+    ts: ts.toISOString(),
   };
 }

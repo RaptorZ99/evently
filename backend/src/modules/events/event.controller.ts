@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
-import { createEvent, deleteEvent, getEventById, listEvents } from './event.service';
+import { createEvent, deleteEvent, getEventById, listEvents, updateEvent } from './event.service';
 import { eventIdParamsSchema, listEventsQuerySchema } from './event.schema';
 
 export async function handleCreateEvent(req: Request, res: Response) {
@@ -24,4 +24,10 @@ export async function handleDeleteEvent(req: Request, res: Response) {
   const { id } = eventIdParamsSchema.parse(req.params);
   await deleteEvent(id);
   res.status(StatusCodes.NO_CONTENT).send();
+}
+
+export async function handleUpdateEvent(req: Request, res: Response) {
+  const { id } = eventIdParamsSchema.parse(req.params);
+  const event = await updateEvent(id, req.body);
+  res.json(event);
 }
