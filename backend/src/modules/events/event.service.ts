@@ -1,0 +1,95 @@
+import { Prisma } from '@prisma/client';
+import { prisma } from '../../config/db';
+import { HttpError } from '../../utils/httpError';
+import { createEventSchema } from './event.schema';
+
+export async function createEvent(input: unknown) {
+  const data = createEventSchema.parse(input);
+
+  if (data.endAt <= data.startAt) {
+    throw HttpError.badRequest('endAt must be after startAt');
+  }
+
+  const [organizer, venue] = await Promise.all([
+    prisma.organizer.findUnique({ where: { id: data.organizerId } }),
+    prisma.venue.findUnique({ where: { id: data.venueId } }),
+  ]);
+
+  if (!organizer) {
+    throw HttpError.notFound('Organizer not found');
+  }
+
+  if (!venue) {
+    throw HttpError.notFound('Venue not found');
+  }
+
+  try {
+    const event = await prisma.event.create({
+      data: {
+        title: data.title,
+        description: data.description,
+        startAt: data.startAt,
+        endAt: data.endAt,
+        capacity: data.capacity,
+        status: data.status,
+        venueId: data.venueId,
+        organizerId: data.organizerId,
+      },
+      include: {
+        organizer: true,
+        venue: true,
+      },
+    });
+
+    return event;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      throw HttpError.conflict('An event with the same title and start date already exists');
+    }
+
+    throw error;
+  }
+}
+
+export async function listEvents(upcoming?: boolean) {
+  const now = new Date();
+  return prisma.event.findMany({
+    where: upcoming ? { startAt: { gte: now } } : undefined,
+    include: {
+      organizer: true,
+      venue: true,
+      _count: {
+        select: {
+          registrations: true,
+        },
+      },
+    },
+    orderBy: { startAt: 'asc' },
+  });
+}
+
+export async function getEventById(id: string) {
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: {
+      organizer: true,
+      venue: true,
+      registrations: {
+        include: {
+          user: true,
+        },
+      },
+      _count: {
+        select: {
+          registrations: true,
+        },
+      },
+    },
+  });
+
+  if (!event) {
+    throw HttpError.notFound('Event not found');
+  }
+
+  return event;
+}

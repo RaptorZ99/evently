@@ -1,0 +1,10 @@
+{
+  "name": "evently",
+  "private": true,
+  "scripts": {
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down -v",
+    "docker:logs": "docker compose logs -f backend",
+    "docker:ps": "docker compose ps"
+  }
+}

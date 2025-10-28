@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum TicketStatus {
+  ISSUED
+  USED
+  REFUNDED
+}
+
+model User {
+  id          String         @id @default(uuid())
+  email       String         @unique
+  name        String
+  role        UserRole       @default(USER)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  registrations Registration[]
+
+  @@index([role])
+}
+
+model Organizer {
+  id        String   @id @default(uuid())
+  name      String
+  events    Event[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Venue {
+  id        String   @id @default(uuid())
+  name      String
+  address   String
+  capacity  Int       @default(0)
+  events    Event[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Event {
+  id           String            @id @default(uuid())
+  title        String
+  description  String?
+  startAt      DateTime
+  endAt        DateTime
+  capacity     Int
+  status       EventStatus       @default(DRAFT)
+  organizerId  String
+  venueId      String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  organizer    Organizer         @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+  venue        Venue             @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  registrations Registration[]
+
+  @@index([startAt])
+  @@index([status])
+  @@unique([title, startAt])
+}
+
+model Registration {
+  id        String             @id @default(uuid())
+  userId    String
+  eventId   String
+  status    RegistrationStatus @default(PENDING)
+  createdAt DateTime           @default(now())
+  user      User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  event     Event              @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  tickets   Ticket[]
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+}
+
+model Ticket {
+  id             String       @id @default(uuid())
+  registrationId String
+  price          Decimal      @db.Decimal(10, 2)
+  purchasedAt    DateTime     @default(now())
+  status         TicketStatus @default(ISSUED)
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([registrationId])
+  @@index([registrationId])
+}
