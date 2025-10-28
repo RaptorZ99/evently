@@ -1,6 +1,7 @@
 import { RegistrationStatus, TicketStatus, UserRole } from '@prisma/client';
 import { connectMongo, disconnectMongo, prisma } from './config/db';
 import { appendFeedEntry } from './modules/feeds/feed.service';
+import { getCheckinModel, getCommentModel, getEventFeedModel, getPhotoModel } from './modules/feeds/feed.model';
 
 async function main() {
   console.log('Seeding database...');
@@ -119,6 +120,18 @@ async function main() {
   });
 
   await connectMongo();
+
+  const EventFeed = getEventFeedModel();
+  const Comment = getCommentModel();
+  const Checkin = getCheckinModel();
+  const Photo = getPhotoModel();
+
+  await Promise.all([
+    EventFeed.deleteMany({}),
+    Comment.deleteMany({}),
+    Checkin.deleteMany({}),
+    Photo.deleteMany({}),
+  ]);
 
   await appendFeedEntry(techEvent.id, {
     type: 'COMMENT',

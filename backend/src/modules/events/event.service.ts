@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { connectMongo, prisma } from '../../config/db';
 import { HttpError } from '../../utils/httpError';
 import { createEventSchema } from './event.schema';
-import { getCheckinModel, getEventFeedModel } from '../feeds/feed.model';
+import { getCheckinModel, getCommentModel, getEventFeedModel, getPhotoModel } from '../feeds/feed.model';
 
 export async function createEvent(input: unknown) {
   const data = createEventSchema.parse(input);
@@ -128,6 +128,13 @@ export async function deleteEvent(id: string) {
   await connectMongo();
   const EventFeed = getEventFeedModel();
   const Checkin = getCheckinModel();
-  await EventFeed.deleteOne({ eventId: id });
-  await Checkin.deleteMany({ eventId: id });
+  const Comment = getCommentModel();
+  const Photo = getPhotoModel();
+
+  await Promise.all([
+    EventFeed.deleteOne({ eventId: id }),
+    Checkin.deleteMany({ eventId: id }),
+    Comment.deleteMany({ eventId: id }),
+    Photo.deleteMany({ eventId: id }),
+  ]);
 }

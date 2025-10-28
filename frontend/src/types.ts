@@ -65,9 +65,9 @@ export type FeedPhotoPayload = {
 };
 
 export type FeedEntry =
-  | { type: 'COMMENT'; payload: FeedCommentPayload; ts: string }
-  | { type: 'CHECKIN'; payload: FeedCheckinPayload; ts: string }
-  | { type: 'PHOTO'; payload: FeedPhotoPayload; ts: string };
+  | { type: 'COMMENT'; itemId: string; payload: FeedCommentPayload; ts: string }
+  | { type: 'CHECKIN'; itemId: string; payload: FeedCheckinPayload; ts: string }
+  | { type: 'PHOTO'; itemId: string; payload: FeedPhotoPayload; ts: string };
 
 export type FeedEntryInput =
   | { type: 'COMMENT'; payload: FeedCommentPayload }

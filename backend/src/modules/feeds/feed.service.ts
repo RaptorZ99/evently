@@ -1,24 +1,244 @@
+import { Types } from 'mongoose';
 import { prisma, connectMongo } from '../../config/db';
 import { HttpError } from '../../utils/httpError';
 import { createFeedEntrySchema } from './feed.schema';
-import { FeedEntry, getCheckinModel, getEventFeedModel } from './feed.model';
+import {
+  FeedReference,
+  getCheckinModel,
+  getCommentModel,
+  getEventFeedModel,
+  getPhotoModel,
+} from './feed.model';
 
+type FeedPayload =
+  | { message: string; author?: string }
+  | { attendee: { name: string; email?: string }; source?: string; meta?: Record<string, unknown> }
+  | { url: string; caption?: string };
+
+async function migrateLegacyFeedEntries(eventId: string) {
+  const EventFeed = getEventFeedModel();
+  const feedDocument = await EventFeed.findOne({ eventId });
+  if (!feedDocument) {
+    return;
+  }
+
+  const Comment = getCommentModel();
+  const Checkin = getCheckinModel();
+  const Photo = getPhotoModel();
+
+  let hasLegacyEntries = false;
+  for (const entry of feedDocument.entries as unknown as Array<FeedReference & { payload?: FeedPayload }>) {
+    if (!entry.itemId) {
+      hasLegacyEntries = true;
+      break;
+    }
+  }
+
+  if (!hasLegacyEntries) {
+    return;
+  }
+
+  const updatedEntries: FeedReference[] = [];
+
+  for (const entry of feedDocument.entries as unknown as Array<FeedReference & { payload?: FeedPayload }>) {
+    if (entry.itemId) {
+      updatedEntries.push({
+        type: entry.type,
+        itemId: entry.itemId,
+        ts: entry.ts instanceof Date ? entry.ts : new Date(entry.ts),
+      });
+      continue;
+    }
+
+    const timestamp = entry.ts instanceof Date ? entry.ts : new Date(entry.ts ?? Date.now());
+    const payload = entry.payload ?? ({} as FeedPayload);
+
+    if (entry.type === 'COMMENT') {
+      const commentPayload = payload as { message?: string; author?: string };
+      if (!commentPayload?.message) {
+        continue;
+      }
+
+      const created = await Comment.create({
+        eventId,
+        message: commentPayload.message,
+        author: commentPayload.author,
+        ts: timestamp,
+      });
+      updatedEntries.push({
+        type: entry.type,
+        itemId: created._id,
+        ts: timestamp,
+      });
+      continue;
+    }
+
+    if (entry.type === 'CHECKIN') {
+      const checkinPayload = payload as {
+        attendee: { name: string; email?: string };
+        source?: string;
+        meta?: Record<string, unknown>;
+      };
+
+      if (!checkinPayload?.attendee?.name) {
+        continue;
+      }
+
+      const tsWindowStart = new Date(timestamp.getTime() - 1000);
+      const tsWindowEnd = new Date(timestamp.getTime() + 1000);
+      const query: Record<string, unknown> = {
+        eventId,
+        ts: { $gte: tsWindowStart, $lte: tsWindowEnd },
+      };
+      if (checkinPayload.attendee?.name) {
+        query['attendee.name'] = checkinPayload.attendee.name;
+      }
+      if (checkinPayload.attendee?.email) {
+        query['attendee.email'] = checkinPayload.attendee.email;
+      }
+
+      const existing = await Checkin.findOne(query);
+      if (existing) {
+        updatedEntries.push({
+          type: entry.type,
+          itemId: existing._id as Types.ObjectId,
+          ts: timestamp,
+        });
+        continue;
+      }
+
+      const created = await Checkin.create({
+        eventId,
+        attendee: checkinPayload.attendee,
+        source: checkinPayload.source,
+        meta: checkinPayload.meta,
+        ts: timestamp,
+      });
+      updatedEntries.push({
+        type: entry.type,
+        itemId: created._id,
+        ts: timestamp,
+      });
+      continue;
+    }
+
+    if (entry.type === 'PHOTO') {
+      const photoPayload = payload as { url?: string; caption?: string };
+      if (!photoPayload?.url) {
+        continue;
+      }
+
+      const created = await Photo.create({
+        eventId,
+        url: photoPayload.url,
+        caption: photoPayload.caption,
+        ts: timestamp,
+      });
+      updatedEntries.push({
+        type: entry.type,
+        itemId: created._id,
+        ts: timestamp,
+      });
+      continue;
+    }
+  }
+
+  feedDocument.entries = updatedEntries;
+  await feedDocument.save();
+}
 export async function getEventFeed(eventId: string) {
   await connectMongo();
+  await migrateLegacyFeedEntries(eventId);
   const EventFeed = getEventFeedModel();
   const feed = await EventFeed.findOne({ eventId }).lean();
 
-  const rawEntries: FeedEntry[] = ((feed?.entries ?? []) as unknown as FeedEntry[]).map((entry) => ({
-    ...entry,
-    ts: new Date(entry.ts),
-  }));
-
-  const entries = [...rawEntries]
-    .sort((a, b) => (new Date(b.ts).getTime()) - (new Date(a.ts).getTime()))
+  const rawEntries: FeedReference[] = ((feed?.entries ?? []) as unknown as FeedReference[])
     .map((entry) => ({
       ...entry,
-      ts: new Date(entry.ts).toISOString(),
+      ts: new Date(entry.ts),
     }));
+
+  if (rawEntries.length === 0) {
+    return {
+      eventId,
+      entries: [],
+    };
+  }
+
+  const commentIds = rawEntries.filter((entry) => entry.type === 'COMMENT').map((entry) => entry.itemId);
+  const checkinIds = rawEntries.filter((entry) => entry.type === 'CHECKIN').map((entry) => entry.itemId);
+  const photoIds = rawEntries.filter((entry) => entry.type === 'PHOTO').map((entry) => entry.itemId);
+
+  const Comment = getCommentModel();
+  const Checkin = getCheckinModel();
+  const Photo = getPhotoModel();
+
+  const comments = commentIds.length > 0 ? await Comment.find({ _id: { $in: commentIds } }) : [];
+  const checkins = checkinIds.length > 0 ? await Checkin.find({ _id: { $in: checkinIds } }) : [];
+  const photos = photoIds.length > 0 ? await Photo.find({ _id: { $in: photoIds } }) : [];
+
+  const commentMap = new Map(comments.map((comment) => [comment._id.toString(), comment]));
+  const checkinMap = new Map(checkins.map((checkin) => [checkin._id.toString(), checkin]));
+  const photoMap = new Map(photos.map((photo) => [photo._id.toString(), photo]));
+
+  const entries = [...rawEntries]
+    .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+    .map((entry) => {
+      const itemId = entry.itemId.toString();
+      const ts = entry.ts instanceof Date ? entry.ts : new Date(entry.ts);
+
+      if (entry.type === 'COMMENT') {
+        const comment = commentMap.get(itemId);
+        if (!comment) {
+          return null;
+        }
+        return {
+          type: entry.type,
+          itemId,
+          payload: {
+            message: comment.message,
+            author: comment.author ?? undefined,
+          },
+          ts: ts.toISOString(),
+        };
+      }
+
+      if (entry.type === 'CHECKIN') {
+        const checkin = checkinMap.get(itemId);
+        if (!checkin) {
+          return null;
+        }
+        return {
+          type: entry.type,
+          itemId,
+          payload: {
+            attendee: checkin.attendee,
+            source: checkin.source ?? undefined,
+            meta: checkin.meta ?? undefined,
+          },
+          ts: ts.toISOString(),
+        };
+      }
+
+      if (entry.type === 'PHOTO') {
+        const photo = photoMap.get(itemId);
+        if (!photo) {
+          return null;
+        }
+        return {
+          type: entry.type,
+          itemId,
+          payload: {
+            url: photo.url,
+            caption: photo.caption ?? undefined,
+          },
+          ts: ts.toISOString(),
+        };
+      }
+
+      return null;
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   return {
     eventId,
@@ -35,21 +255,66 @@ export async function appendFeedEntry(eventId: string, payload: unknown) {
   const data = createFeedEntrySchema.parse(payload);
   await connectMongo();
   const EventFeed = getEventFeedModel();
+  const Comment = getCommentModel();
   const Checkin = getCheckinModel();
+  const Photo = getPhotoModel();
 
   const entryTimestamp = new Date();
-  const entry = {
-    type: data.type,
-    payload: data.payload,
-    ts: entryTimestamp,
-  };
+  let createdId: Types.ObjectId;
+  let responsePayload: FeedPayload;
+
+  if (data.type === 'COMMENT') {
+    const created = await Comment.create({
+      eventId,
+      message: data.payload.message,
+      author: data.payload.author,
+      ts: entryTimestamp,
+    });
+    createdId = created._id;
+    responsePayload = {
+      message: created.message,
+      author: created.author ?? undefined,
+    };
+  } else if (data.type === 'CHECKIN') {
+    const created = await Checkin.create({
+      eventId,
+      attendee: data.payload.attendee,
+      source: data.payload.source,
+      meta: data.payload.meta,
+      ts: entryTimestamp,
+    });
+    createdId = created._id;
+    responsePayload = {
+      attendee: created.attendee,
+      source: created.source ?? undefined,
+      meta: created.meta ?? undefined,
+    };
+  } else {
+    const created = await Photo.create({
+      eventId,
+      url: data.payload.url,
+      caption: data.payload.caption,
+      ts: entryTimestamp,
+    });
+    createdId = created._id;
+    responsePayload = {
+      url: created.url,
+      caption: created.caption ?? undefined,
+    };
+  }
 
   await EventFeed.findOneAndUpdate(
     { eventId },
     {
       $push: {
         entries: {
-          $each: [entry],
+          $each: [
+            {
+              type: data.type,
+              itemId: createdId,
+              ts: entryTimestamp,
+            },
+          ],
           $sort: { ts: -1 },
         },
       },
@@ -57,25 +322,17 @@ export async function appendFeedEntry(eventId: string, payload: unknown) {
     { upsert: true, new: true }
   );
 
-  if (data.type === 'CHECKIN') {
-    const checkinData = data.payload;
-    await Checkin.create({
-      eventId,
-      attendee: checkinData.attendee,
-      source: checkinData.source,
-      meta: checkinData.meta,
-    });
-  }
-
   return {
-    type: entry.type,
-    payload: entry.payload,
+    type: data.type,
+    itemId: createdId.toString(),
+    payload: responsePayload,
     ts: entryTimestamp.toISOString(),
   };
 }
 
 export async function getEventAnalytics(eventId: string) {
   await connectMongo();
+  await migrateLegacyFeedEntries(eventId);
   const EventFeed = getEventFeedModel();
   const Checkin = getCheckinModel();
 

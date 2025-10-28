@@ -395,6 +395,9 @@ components:
         type:
           type: string
           enum: [COMMENT, CHECKIN, PHOTO]
+        itemId:
+          type: string
+          description: Identifiant de l'item stocké dans la collection correspondant au type
         payload:
           type: object
           additionalProperties: true

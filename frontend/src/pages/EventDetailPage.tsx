@@ -29,12 +29,13 @@ function formatDate(value: string) {
 
 function renderFeedEntry(entry: FeedEntry, index: number) {
   const timestamp = new Date(entry.ts).toLocaleString();
+  const key = entry.itemId ?? `${entry.ts}-${index}`;
 
   switch (entry.type) {
     case 'COMMENT': {
       const { message, author } = entry.payload;
       return (
-        <li key={`${entry.ts}-${index}`} className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+        <li key={key} className="rounded border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-slate-700">{message}</p>
           <p className="mt-2 text-xs text-slate-500">{author ?? 'Anonyme'} · {timestamp}</p>
         </li>
@@ -43,7 +44,7 @@ function renderFeedEntry(entry: FeedEntry, index: number) {
     case 'CHECKIN': {
       const { attendee, source } = entry.payload;
       return (
-        <li key={`${entry.ts}-${index}`} className="rounded border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+        <li key={key} className="rounded border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
           <p className="text-sm font-medium text-emerald-700">Arrivée enregistrée</p>
           <p className="text-sm text-emerald-700">{attendee.name}{attendee.email ? ` · ${attendee.email}` : ''}</p>
           <p className="mt-1 text-xs text-emerald-600">{source ? `Source: ${source} · ` : ''}{timestamp}</p>
@@ -53,7 +54,7 @@ function renderFeedEntry(entry: FeedEntry, index: number) {
     case 'PHOTO': {
       const { url, caption } = entry.payload;
       return (
-        <li key={`${entry.ts}-${index}`} className="space-y-2 rounded border border-slate-200 bg-white p-4 shadow-sm">
+        <li key={key} className="space-y-2 rounded border border-slate-200 bg-white p-4 shadow-sm">
           <div className="overflow-hidden rounded">
             <img src={url} alt={caption ?? 'Photo'} className="h-48 w-full object-cover" />
           </div>
