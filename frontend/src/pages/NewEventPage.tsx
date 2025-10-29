@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -9,6 +10,62 @@ import {
   updateEvent,
 } from '../api';
 import type { EventDetail, Organizer, Venue } from '../types';
+
+const WEEKDAY_LABELS = ['L', 'Ma', 'Me', 'J', 'V', 'S', 'D'];
+
+interface RangeDraft {
+  startDate: Date | null;
+  endDate: Date | null;
+  startTime: string;
+  endTime: string;
+}
+
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, count: number) {
+  return new Date(date.getFullYear(), date.getMonth() + count, 1);
+}
+
+function getCalendarStart(date: Date) {
+  const monthStart = startOfMonth(date);
+  const day = (monthStart.getDay() + 6) % 7; // Monday = 0
+  return new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate() - day);
+}
+
+function generateCalendarDays(month: Date) {
+  const start = getCalendarStart(month);
+  return Array.from({ length: 42 }, (_, index) => {
+    const current = new Date(start);
+    current.setDate(start.getDate() + index);
+    return current;
+  });
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function toTimeInput(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(11, 16);
+}
+
+function composeDateTime(date: Date, time: string) {
+  const [hours, minutes] = time.split(':').map(Number);
+  const result = new Date(date);
+  result.setHours(hours ?? 0, minutes ?? 0, 0, 0);
+  return result;
+}
 
 const defaultStart = () => new Date().toISOString().slice(0, 16);
 const defaultEnd = () => new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -45,11 +102,37 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
     venueId: '',
     status: 'PUBLISHED',
   });
-  const rangePickerRef = useRef<HTMLDivElement | null>(null);
   const [rangePickerOpen, setRangePickerOpen] = useState(false);
+  const [rangeDraft, setRangeDraft] = useState<RangeDraft>({
+    startDate: null,
+    endDate: null,
+    startTime: '09:00',
+    endTime: '18:00',
+  });
+  const [calendarMonth, setCalendarMonth] = useState(() => startOfMonth(new Date()));
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const closeRangePicker = useCallback(() => {
+    setRangePickerOpen(false);
+    setRangeError(null);
+  }, []);
+  const calendarDays = useMemo(() => generateCalendarDays(calendarMonth), [calendarMonth]);
+  const calendarLabel = useMemo(
+    () =>
+      calendarMonth.toLocaleDateString('fr-FR', {
+        month: 'long',
+        year: 'numeric',
+      }),
+    [calendarMonth]
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+    return () => setIsMounted(false);
+  }, []);
 
   useEffect(() => {
     async function loadPage() {
@@ -106,26 +189,41 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
       return;
     }
 
-    function handleClick(event: MouseEvent) {
-      if (rangePickerRef.current && !rangePickerRef.current.contains(event.target as Node)) {
-        setRangePickerOpen(false);
-      }
+    const startValue = form.startAt ? new Date(form.startAt) : null;
+    const endValue = form.endAt ? new Date(form.endAt) : null;
+
+    const sanitizedStart = startValue ? startOfDay(startValue) : null;
+    const sanitizedEnd = endValue ? startOfDay(endValue) : null;
+
+    setRangeDraft({
+      startDate: sanitizedStart,
+      endDate: sanitizedEnd && sanitizedStart && sanitizedEnd < sanitizedStart ? sanitizedStart : sanitizedEnd,
+      startTime: startValue ? toTimeInput(startValue) : '09:00',
+      endTime: endValue ? toTimeInput(endValue) : '18:00',
+    });
+
+    const initialMonth = sanitizedStart ?? sanitizedEnd ?? new Date();
+    setCalendarMonth(startOfMonth(initialMonth));
+    setRangeError(null);
+  }, [form.endAt, form.startAt, rangePickerOpen]);
+
+  useEffect(() => {
+    if (!rangePickerOpen) {
+      return;
     }
 
     function handleKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        setRangePickerOpen(false);
+        closeRangePicker();
       }
     }
 
-    document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
 
     return () => {
-      document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [rangePickerOpen]);
+  }, [closeRangePicker, rangePickerOpen]);
 
   const title = useMemo(() => (isEditMode ? 'Modifier l’événement' : 'Nouvel événement'), [isEditMode]);
   const subtitle = useMemo(
@@ -168,6 +266,206 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
     });
   }
 
+  function handleDaySelection(day: Date) {
+    const dayStart = startOfDay(day);
+    setRangeError(null);
+    setRangeDraft((current) => {
+      if (!current.startDate || (current.startDate && current.endDate)) {
+        return {
+          ...current,
+          startDate: dayStart,
+          endDate: null,
+        };
+      }
+
+      if (dayStart < current.startDate) {
+        return {
+          ...current,
+          startDate: dayStart,
+          endDate: current.startDate,
+        };
+      }
+
+      return {
+        ...current,
+        endDate: dayStart,
+      };
+    });
+  }
+
+  function handleApplyRange() {
+    if (!rangeDraft.startDate) {
+      setRangeError('Sélectionnez une date de début.');
+      return;
+    }
+
+    const endDate = rangeDraft.endDate ?? rangeDraft.startDate;
+    const startDateTime = composeDateTime(rangeDraft.startDate, rangeDraft.startTime);
+    const endDateTime = composeDateTime(endDate, rangeDraft.endTime);
+
+    if (endDateTime <= startDateTime) {
+      setRangeError('La fin doit être postérieure au début.');
+      return;
+    }
+
+    updateForm({
+      startAt: startDateTime.toISOString().slice(0, 16),
+      endAt: endDateTime.toISOString().slice(0, 16),
+    });
+    closeRangePicker();
+  }
+
+  function handleResetRange() {
+    setRangeDraft({
+      startDate: null,
+      endDate: null,
+      startTime: '09:00',
+      endTime: '18:00',
+    });
+    setRangeError(null);
+  }
+
+  const rangePickerOverlay =
+    isMounted && rangePickerOpen
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 px-4 py-6"
+            role="presentation"
+            onClick={closeRangePicker}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="z-50 w-full max-w-lg space-y-4 rounded border border-slate-200 bg-white p-4 shadow-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth((current) => addMonths(current, -1))}
+                  className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                >
+                  Précédent
+                </button>
+                <span className="text-sm font-semibold capitalize text-slate-700">{calendarLabel}</span>
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth((current) => addMonths(current, 1))}
+                  className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                >
+                  Suivant
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {WEEKDAY_LABELS.map((label) => (
+                  <span key={label}>{label}</span>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 text-sm">
+                {calendarDays.map((day) => {
+                  const isCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                  const isSelectedStart = rangeDraft.startDate && isSameDay(day, rangeDraft.startDate);
+                  const isSelectedEnd = rangeDraft.endDate && isSameDay(day, rangeDraft.endDate);
+                  const hasRange = rangeDraft.startDate && rangeDraft.endDate;
+                  const isInRange =
+                    hasRange &&
+                    rangeDraft.startDate &&
+                    rangeDraft.endDate &&
+                    day > rangeDraft.startDate &&
+                    day < rangeDraft.endDate;
+
+                  const baseClasses =
+                    'flex h-9 items-center justify-center rounded transition focus:outline-none focus:ring-2 focus:ring-slate-300';
+                  const monthClasses = isCurrentMonth ? 'text-slate-700' : 'text-slate-400';
+                  const selectedClasses =
+                    isSelectedStart || isSelectedEnd
+                      ? 'bg-slate-900 text-white'
+                      : isInRange
+                        ? 'bg-slate-100 text-slate-700'
+                        : 'hover:bg-slate-100';
+                  const rangeEdgeClasses =
+                    isSelectedStart && isSelectedEnd
+                      ? 'rounded'
+                      : isSelectedStart
+                        ? 'rounded-l'
+                        : isSelectedEnd
+                          ? 'rounded-r'
+                          : '';
+
+                  return (
+                    <button
+                      key={`${day.toISOString()}-day`}
+                      type="button"
+                      onClick={() => handleDaySelection(day)}
+                      className={`${baseClasses} ${monthClasses} ${selectedClasses} ${rangeEdgeClasses}`}
+                    >
+                      {day.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Heure de début
+                  <input
+                    type="time"
+                    value={rangeDraft.startTime}
+                    onChange={(event) => {
+                      setRangeError(null);
+                      setRangeDraft((current) => ({ ...current, startTime: event.target.value }));
+                    }}
+                    className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Heure de fin
+                  <input
+                    type="time"
+                    value={rangeDraft.endTime}
+                    onChange={(event) => {
+                      setRangeError(null);
+                      setRangeDraft((current) => ({ ...current, endTime: event.target.value }));
+                    }}
+                    className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  />
+                </label>
+              </div>
+
+              {rangeError && <p className="text-xs text-rose-600">{rangeError}</p>}
+
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={handleResetRange}
+                  className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                >
+                  Réinitialiser
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={closeRangePicker}
+                    className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyRange}
+                    className="rounded bg-slate-900 px-3 py-1 text-xs font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Appliquer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -203,7 +501,8 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-3xl space-y-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <>
+      <form onSubmit={handleSubmit} className="mx-auto max-w-3xl space-y-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <header className="space-y-2">
         <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
         <p className="text-sm text-slate-600">{subtitle}</p>
@@ -240,50 +539,15 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
         <div className="md:col-span-2">
           <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
             Période
-            <div ref={rangePickerRef} className="relative">
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => setRangePickerOpen((current) => !current)}
+                onClick={() => (rangePickerOpen ? closeRangePicker() : setRangePickerOpen(true))}
                 className="flex w-full items-center justify-between rounded border border-slate-300 px-3 py-2 text-left text-sm text-slate-700 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
               >
                 <span>{rangeLabel}</span>
                 <span className="text-xs text-slate-500">{rangePickerOpen ? 'Masquer' : 'Modifier'}</span>
               </button>
-              {rangePickerOpen && (
-                <div className="absolute left-0 right-0 z-10 mt-2 space-y-3 rounded border border-slate-200 bg-white p-4 shadow-lg">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Début
-                      <input
-                        type="datetime-local"
-                        required
-                        value={form.startAt}
-                        onChange={(event) => updateForm({ startAt: event.target.value })}
-                        className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Fin
-                      <input
-                        type="datetime-local"
-                        required
-                        value={form.endAt}
-                        onChange={(event) => updateForm({ endAt: event.target.value })}
-                        className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                      />
-                    </label>
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setRangePickerOpen(false)}
-                      className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-                    >
-                      Fermer
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </label>
         </div>
@@ -351,6 +615,8 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
       >
         {saving ? 'Enregistrement…' : submitLabel}
       </button>
-    </form>
+      </form>
+      {rangePickerOverlay}
+    </>
   );
 }

@@ -437,11 +437,10 @@ export default function EventDetailPage() {
 
       {toast && (
         <div
-          className={`rounded border px-4 py-3 text-sm ${
-            toast.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-rose-200 bg-rose-50 text-rose-700'
-          }`}
+          className={`rounded border px-4 py-3 text-sm ${toast.type === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-rose-200 bg-rose-50 text-rose-700'
+            }`}
         >
           {toast.message}
         </div>
@@ -775,13 +774,22 @@ export default function EventDetailPage() {
         ) : (
           <ul className="space-y-3">
             {event.registrations.map((registration) => (
-              <li key={registration.id} className="space-y-3 rounded border border-slate-200 px-4 py-3 text-sm">
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-slate-800">{registration.user.name}</span>
-                  <span className="text-xs text-slate-500">{registration.user.email}</span>
-                </div>
-                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:gap-4">
+              <li key={registration.id} className="rounded border border-slate-200 px-4 py-3 text-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="font-semibold text-slate-800 truncate">{registration.user.name}</span>
+                    <span className="text-xs text-slate-500 truncate">{registration.user.email}</span>
+                    {registration.ticket ? (
+                      <span className="text-[11px] font-normal normal-case text-slate-500">
+                        {currencyFormatter.format(registration.ticket.price)} · émis le{' '}
+                        {new Date(registration.ticket.purchasedAt).toLocaleString('fr-FR')}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-500">Aucun ticket émis.</span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                     <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Statut d’inscription
                       <select
@@ -799,6 +807,7 @@ export default function EventDetailPage() {
                         ))}
                       </select>
                     </label>
+
                     {registration.ticket ? (
                       <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         Statut du ticket
@@ -822,23 +831,18 @@ export default function EventDetailPage() {
                             </option>
                           ))}
                         </select>
-                        <span className="text-[11px] font-normal normal-case text-slate-500">
-                          {currencyFormatter.format(registration.ticket.price)} · émis le{' '}
-                          {new Date(registration.ticket.purchasedAt).toLocaleString('fr-FR')}
-                        </span>
                       </label>
-                    ) : (
-                      <span className="text-xs text-slate-500 md:self-end">Aucun ticket émis.</span>
-                    )}
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRegistration(registration.id)}
+                      disabled={deletingRegistrationId === registration.id}
+                      className="rounded border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {deletingRegistrationId === registration.id ? 'Suppression…' : 'Supprimer'}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteRegistration(registration.id)}
-                    disabled={deletingRegistrationId === registration.id}
-                    className="self-start rounded border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {deletingRegistrationId === registration.id ? 'Suppression…' : 'Supprimer'}
-                  </button>
                 </div>
               </li>
             ))}
