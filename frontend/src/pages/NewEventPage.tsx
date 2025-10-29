@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -45,6 +45,8 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
     venueId: '',
     status: 'PUBLISHED',
   });
+  const rangePickerRef = useRef<HTMLDivElement | null>(null);
+  const [rangePickerOpen, setRangePickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +101,32 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
     void loadPage();
   }, [id, isEditMode]);
 
+  useEffect(() => {
+    if (!rangePickerOpen) {
+      return;
+    }
+
+    function handleClick(event: MouseEvent) {
+      if (rangePickerRef.current && !rangePickerRef.current.contains(event.target as Node)) {
+        setRangePickerOpen(false);
+      }
+    }
+
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setRangePickerOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [rangePickerOpen]);
+
   const title = useMemo(() => (isEditMode ? 'Modifier l’événement' : 'Nouvel événement'), [isEditMode]);
   const subtitle = useMemo(
     () =>
@@ -108,9 +136,36 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
     [isEditMode]
   );
   const submitLabel = useMemo(() => (isEditMode ? 'Enregistrer les modifications' : 'Créer l’événement'), [isEditMode]);
+  const rangeLabel = useMemo(() => {
+    const start = new Date(form.startAt);
+    const end = new Date(form.endAt);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return 'Sélectionner une période';
+    }
+
+    const startText = start.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    const endText = end.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+
+    return `${startText} → ${endText}`;
+  }, [form.startAt, form.endAt]);
 
   function updateForm(partial: Partial<FormState>) {
-    setForm((current) => ({ ...current, ...partial }));
+    setForm((current) => {
+      const next = { ...current, ...partial };
+
+      if ('startAt' in partial || 'endAt' in partial) {
+        const start = new Date(next.startAt);
+        const end = new Date(next.endAt);
+
+        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end <= start) {
+          const adjustedEnd = new Date(start.getTime() + 60 * 60 * 1000);
+          next.endAt = adjustedEnd.toISOString().slice(0, 16);
+        }
+      }
+
+      return next;
+    });
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -182,27 +237,56 @@ export default function EventEditorPage({ mode = 'create' }: EventEditorPageProp
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Début
-          <input
-            type="datetime-local"
-            required
-            value={form.startAt}
-            onChange={(event) => updateForm({ startAt: event.target.value })}
-            className="rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
-          Fin
-          <input
-            type="datetime-local"
-            required
-            value={form.endAt}
-            onChange={(event) => updateForm({ endAt: event.target.value })}
-            className="rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-          />
-        </label>
+        <div className="md:col-span-2">
+          <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+            Période
+            <div ref={rangePickerRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setRangePickerOpen((current) => !current)}
+                className="flex w-full items-center justify-between rounded border border-slate-300 px-3 py-2 text-left text-sm text-slate-700 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              >
+                <span>{rangeLabel}</span>
+                <span className="text-xs text-slate-500">{rangePickerOpen ? 'Masquer' : 'Modifier'}</span>
+              </button>
+              {rangePickerOpen && (
+                <div className="absolute left-0 right-0 z-10 mt-2 space-y-3 rounded border border-slate-200 bg-white p-4 shadow-lg">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Début
+                      <input
+                        type="datetime-local"
+                        required
+                        value={form.startAt}
+                        onChange={(event) => updateForm({ startAt: event.target.value })}
+                        className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Fin
+                      <input
+                        type="datetime-local"
+                        required
+                        value={form.endAt}
+                        onChange={(event) => updateForm({ endAt: event.target.value })}
+                        className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setRangePickerOpen(false)}
+                      className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </label>
+        </div>
 
         <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
           Organisateur

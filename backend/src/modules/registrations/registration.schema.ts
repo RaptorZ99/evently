@@ -13,3 +13,7 @@ export const createRegistrationSchema = z.object({
 export const registrationIdParamsSchema = z.object({
   id: z.string().uuid(),
 });
+
+export const updateRegistrationSchema = z.object({
+  status: z.nativeEnum(RegistrationStatus),
+});

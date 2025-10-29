@@ -7,6 +7,9 @@ import type {
   FeedResponse,
   Organizer,
   Registration,
+  RegistrationStatus,
+  Ticket,
+  TicketStatus,
   User,
   Venue,
 } from './types';
@@ -144,10 +147,38 @@ export function registerForEvent(eventId: string, payload: { userId: string }): 
   });
 }
 
-export function issueTicket(registrationId: string, payload: { price: number }): Promise<void> {
-  return request<void>(`/api/registrations/${registrationId}/tickets`, {
+export function updateRegistrationStatus(registrationId: string, payload: { status: RegistrationStatus }): Promise<Registration> {
+  return request<Registration>(`/api/registrations/${registrationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeRegistration(registrationId: string): Promise<void> {
+  return request<void>(`/api/registrations/${registrationId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function issueTicket(registrationId: string, payload: { price: number; status?: TicketStatus }): Promise<Ticket> {
+  const body = {
+    ...payload,
+    status: payload.status ?? 'ISSUED',
+  };
+  return request<Ticket>(`/api/registrations/${registrationId}/tickets`, {
     method: 'POST',
-    body: JSON.stringify({ ...payload, status: 'ISSUED' }),
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateTicketStatus(
+  registrationId: string,
+  ticketId: string,
+  payload: { status: TicketStatus }
+): Promise<Ticket> {
+  return request<Ticket>(`/api/registrations/${registrationId}/tickets/${ticketId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
   });
 }
 

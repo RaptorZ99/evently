@@ -21,10 +21,18 @@ export interface Venue {
   address: string;
 }
 
+export interface Ticket {
+  id: string;
+  status: TicketStatus;
+  price: number;
+  purchasedAt: string;
+}
+
 export interface Registration {
   id: string;
   status: RegistrationStatus;
   createdAt?: string;
+  ticket: Ticket | null;
   user: User;
 }
 

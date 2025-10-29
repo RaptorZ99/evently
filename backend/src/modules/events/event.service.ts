@@ -86,6 +86,7 @@ export async function getEventById(id: string) {
       registrations: {
         include: {
           user: true,
+          tickets: true,
         },
       },
       _count: {
@@ -101,8 +102,22 @@ export async function getEventById(id: string) {
   }
 
   const { _count, ...rest } = event;
+  const registrations = rest.registrations.map(({ tickets, ...registration }) => {
+    const [rawTicket] = tickets;
+    return {
+      ...registration,
+      ticket: rawTicket
+        ? {
+            ...rawTicket,
+            price: Number(rawTicket.price),
+          }
+        : null,
+    };
+  });
+
   return {
     ...rest,
+    registrations,
     registrationCount: _count.registrations,
   };
 }

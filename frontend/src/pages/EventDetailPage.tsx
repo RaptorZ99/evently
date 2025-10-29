@@ -9,10 +9,33 @@ import {
   fetchEventFeed,
   fetchUsers,
   issueTicket,
+  removeRegistration,
   registerForEvent,
   updateFeedEntry,
+  updateRegistrationStatus,
+  updateTicketStatus,
 } from '../api';
-import type { AnalyticsResponse, EventDetail, FeedEntry, FeedEntryInput, User } from '../types';
+import type {
+  AnalyticsResponse,
+  EventDetail,
+  FeedEntry,
+  FeedEntryInput,
+  RegistrationStatus,
+  TicketStatus,
+  User,
+} from '../types';
+
+const REGISTRATION_STATUS_OPTIONS: Array<{ value: RegistrationStatus; label: string }> = [
+  { value: 'PENDING', label: 'En attente' },
+  { value: 'CONFIRMED', label: 'Confirmée' },
+  { value: 'CANCELLED', label: 'Annulée' },
+];
+
+const TICKET_STATUS_OPTIONS: Array<{ value: TicketStatus; label: string }> = [
+  { value: 'ISSUED', label: 'Émis' },
+  { value: 'USED', label: 'Utilisé' },
+  { value: 'REFUNDED', label: 'Remboursé' },
+];
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
@@ -42,6 +65,9 @@ export default function EventDetailPage() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedRegistrationId, setSelectedRegistrationId] = useState('');
   const [ticketPrice, setTicketPrice] = useState('49.00');
+  const [updatingRegistrationId, setUpdatingRegistrationId] = useState<string | null>(null);
+  const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
+  const [deletingRegistrationId, setDeletingRegistrationId] = useState<string | null>(null);
   const [feedType, setFeedType] = useState<'COMMENT' | 'CHECKIN' | 'PHOTO'>('COMMENT');
   const [feedComment, setFeedComment] = useState({ message: '' });
   const [feedCheckin, setFeedCheckin] = useState({ name: '', email: '', source: '' });
@@ -52,14 +78,28 @@ export default function EventDetailPage() {
   const [editingEntry, setEditingEntry] = useState<FeedEntry | null>(null);
   const [deletingEvent, setDeletingEvent] = useState(false);
 
-  const pendingRegistrations = useMemo(
-    () => event?.registrations.filter((registration) => registration.status !== 'CANCELLED') ?? [],
+  const ticketEligibleRegistrations = useMemo(
+    () =>
+      event?.registrations.filter(
+        (registration) => registration.status !== 'CANCELLED' && !registration.ticket
+      ) ?? [],
     [event?.registrations]
   );
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId) ?? null,
     [selectedUserId, users]
   );
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }),
+    []
+  );
+
+  function getFirstEligibleRegistrationId(registrations: EventDetail['registrations']) {
+    const eligible = registrations.find(
+      (registration) => registration.status !== 'CANCELLED' && !registration.ticket
+    );
+    return eligible?.id ?? '';
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -92,8 +132,16 @@ export default function EventDetailPage() {
         }
       }
 
-      if (!selectedRegistrationId && eventResponse.registrations.length > 0) {
-        setSelectedRegistrationId(eventResponse.registrations[0].id);
+      const defaultRegistrationId = getFirstEligibleRegistrationId(eventResponse.registrations);
+      const isCurrentEligible = eventResponse.registrations.some(
+        (registration) =>
+          registration.id === selectedRegistrationId &&
+          registration.status !== 'CANCELLED' &&
+          !registration.ticket
+      );
+
+      if (!isCurrentEligible) {
+        setSelectedRegistrationId(defaultRegistrationId);
       }
     } catch (err) {
       if (err instanceof Error) {
@@ -110,8 +158,14 @@ export default function EventDetailPage() {
     if (!id) return;
     const updated = await fetchEventDetail(id);
     setEvent(updated);
-    if (!updated.registrations.find((registration) => registration.id === selectedRegistrationId) && updated.registrations.length > 0) {
-      setSelectedRegistrationId(updated.registrations[0].id);
+    const isSelectedEligible = updated.registrations.some(
+      (registration) =>
+        registration.id === selectedRegistrationId &&
+        registration.status !== 'CANCELLED' &&
+        !registration.ticket
+    );
+    if (!isSelectedEligible) {
+      setSelectedRegistrationId(getFirstEligibleRegistrationId(updated.registrations));
     }
   }
 
@@ -191,6 +245,63 @@ export default function EventDetailPage() {
       showToast({ type: 'success', message: 'Ticket émis avec succès.' });
     } catch (err) {
       showToast({ type: 'error', message: err instanceof Error ? err.message : 'Échec de l\'émission du ticket' });
+    }
+  }
+
+  async function handleChangeRegistrationStatus(registrationId: string, status: RegistrationStatus) {
+    setUpdatingRegistrationId(registrationId);
+    try {
+      await updateRegistrationStatus(registrationId, { status });
+      await refreshEvent();
+      const statusLabel = REGISTRATION_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+      showToast({ type: 'success', message: `Statut d'inscription mis à jour (${statusLabel}).` });
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Impossible de mettre à jour le statut de l’inscription',
+      });
+    } finally {
+      setUpdatingRegistrationId(null);
+    }
+  }
+
+  async function handleChangeTicketStatus(registrationId: string, ticketId: string, status: TicketStatus) {
+    setUpdatingTicketId(ticketId);
+    try {
+      await updateTicketStatus(registrationId, ticketId, { status });
+      await refreshEvent();
+      const statusLabel = TICKET_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+      showToast({ type: 'success', message: `Statut du ticket mis à jour (${statusLabel}).` });
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Impossible de mettre à jour le statut du ticket',
+      });
+    } finally {
+      setUpdatingTicketId(null);
+    }
+  }
+
+  async function handleDeleteRegistration(registrationId: string) {
+    if (!window.confirm('Supprimer cette inscription ? Le ticket associé sera également supprimé.')) {
+      return;
+    }
+
+    setDeletingRegistrationId(registrationId);
+    try {
+      await removeRegistration(registrationId);
+      if (selectedRegistrationId === registrationId) {
+        setSelectedRegistrationId('');
+      }
+      await refreshEvent();
+      showToast({ type: 'success', message: 'Inscription supprimée.' });
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Impossible de supprimer l’inscription',
+      });
+    } finally {
+      setDeletingRegistrationId(null);
     }
   }
 
@@ -394,10 +505,10 @@ export default function EventDetailPage() {
               onChange={(event) => setSelectedRegistrationId(event.target.value)}
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             >
-              {pendingRegistrations.length === 0 ? (
+              {ticketEligibleRegistrations.length === 0 ? (
                 <option value="">Aucune inscription</option>
               ) : (
-                pendingRegistrations.map((registration) => (
+                ticketEligibleRegistrations.map((registration) => (
                   <option key={registration.id} value={registration.id}>
                     {registration.user.name} — {registration.status}
                   </option>
@@ -662,13 +773,73 @@ export default function EventDetailPage() {
         {event.registrations.length === 0 ? (
           <p className="text-sm text-slate-600">Aucune inscription pour le moment.</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {event.registrations.map((registration) => (
-              <li key={registration.id} className="flex items-center justify-between rounded border border-slate-200 px-4 py-2 text-sm">
-                <span>
-                  {registration.user.name} · {registration.user.email}
-                  <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs uppercase tracking-wide text-slate-600">{registration.status}</span>
-                </span>
+              <li key={registration.id} className="space-y-3 rounded border border-slate-200 px-4 py-3 text-sm">
+                <div className="flex flex-col gap-1">
+                  <span className="font-semibold text-slate-800">{registration.user.name}</span>
+                  <span className="text-xs text-slate-500">{registration.user.email}</span>
+                </div>
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:gap-4">
+                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Statut d’inscription
+                      <select
+                        value={registration.status}
+                        onChange={(event) =>
+                          handleChangeRegistrationStatus(registration.id, event.target.value as RegistrationStatus)
+                        }
+                        disabled={updatingRegistrationId === registration.id || deletingRegistrationId === registration.id}
+                        className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                      >
+                        {REGISTRATION_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {registration.ticket ? (
+                      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Statut du ticket
+                        <select
+                          value={registration.ticket.status}
+                          onChange={(event) =>
+                            handleChangeTicketStatus(
+                              registration.id,
+                              registration.ticket!.id,
+                              event.target.value as TicketStatus
+                            )
+                          }
+                          disabled={
+                            updatingTicketId === registration.ticket.id || deletingRegistrationId === registration.id
+                          }
+                          className="mt-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                        >
+                          {TICKET_STATUS_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[11px] font-normal normal-case text-slate-500">
+                          {currencyFormatter.format(registration.ticket.price)} · émis le{' '}
+                          {new Date(registration.ticket.purchasedAt).toLocaleString('fr-FR')}
+                        </span>
+                      </label>
+                    ) : (
+                      <span className="text-xs text-slate-500 md:self-end">Aucun ticket émis.</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRegistration(registration.id)}
+                    disabled={deletingRegistrationId === registration.id}
+                    className="self-start rounded border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingRegistrationId === registration.id ? 'Suppression…' : 'Supprimer'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

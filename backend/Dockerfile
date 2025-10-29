@@ -17,7 +17,7 @@ COPY backend/package.json ./package.json
 COPY backend/package-lock.json ./package-lock.json
 COPY backend/tsconfig.json ./tsconfig.json
 COPY backend/src ./src
-COPY prisma ./prisma
+COPY backend/prisma ./prisma
 RUN npx prisma generate --schema prisma/schema.prisma
 RUN npm run build
 
@@ -27,7 +27,7 @@ COPY backend/package.json backend/package-lock.json ./
 COPY --from=deps /app/node_modules ./node_modules
 RUN npm prune --omit=dev
 COPY --from=builder /app/dist ./dist
-COPY prisma ./prisma
+COPY backend/prisma ./prisma
 COPY backend/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 RUN chown -R node:node /app

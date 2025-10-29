@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { handleCreateTicket } from './ticket.controller';
+import { handleCreateTicket, handleUpdateTicketStatus } from './ticket.controller';
 
-export const ticketsRouter = Router();
+export const ticketsRouter = Router({ mergeParams: true });
 
-ticketsRouter.post('/:id/tickets', handleCreateTicket);
+ticketsRouter.post('/', handleCreateTicket);
+ticketsRouter.patch('/:ticketId', handleUpdateTicketStatus);
