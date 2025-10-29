@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { StatusCodes } from 'http-status-codes';
-import { appendFeedEntry, getEventAnalytics, getEventFeed, updateFeedEntry } from './feed.service';
+import { appendFeedEntry, deleteFeedEntry, getEventAnalytics, getEventFeed, updateFeedEntry } from './feed.service';
 import { feedEntryParamsSchema, feedParamsSchema } from './feed.schema';
 
 export async function handleGetFeed(req: Request, res: Response) {
@@ -25,4 +25,10 @@ export async function handleUpdateFeedEntry(req: Request, res: Response) {
   const { id, entryId } = feedEntryParamsSchema.parse(req.params);
   const entry = await updateFeedEntry(id, entryId, req.body);
   res.json(entry);
+}
+
+export async function handleDeleteFeedEntry(req: Request, res: Response) {
+  const { id, entryId } = feedEntryParamsSchema.parse(req.params);
+  await deleteFeedEntry(id, entryId);
+  res.status(StatusCodes.NO_CONTENT).send();
 }

@@ -1,13 +1,16 @@
-import { RegistrationStatus, TicketStatus, UserRole } from '@prisma/client';
 import { connectMongo, disconnectMongo, prisma } from './config/db';
 import { appendFeedEntry } from './modules/feeds/feed.service';
 import { getCheckinModel, getCommentModel, getEventFeedModel, getPhotoModel } from './modules/feeds/feed.model';
+import { randomUUID } from 'crypto';
 
 async function main() {
-  console.log('Seeding database...');
+  console.log('Seeding database (raw SQL + Mongo)...');
 
   const forceSeed = process.env.FORCE_SEED === 'true';
-  const existingUsers = await prisma.user.count();
+
+  const [{ count: existingUsers } ] = await prisma.$queryRaw<Array<{ count: number }>>`
+    SELECT COUNT(*)::int AS count FROM "User"
+  `;
 
   if (existingUsers > 0 && !forceSeed) {
     console.log('Seed skipped: data already present. Set FORCE_SEED=true to overwrite.');
@@ -18,114 +21,79 @@ async function main() {
     console.log('Force seeding enabled, existing data will be cleared.');
   }
 
-  await prisma.ticket.deleteMany();
-  await prisma.registration.deleteMany();
-  await prisma.event.deleteMany();
-  await prisma.venue.deleteMany();
-  await prisma.organizer.deleteMany();
-  await prisma.user.deleteMany();
+  // Wipe relational data in dependency order
+  await prisma.$queryRaw`DELETE FROM "Ticket"`;
+  await prisma.$queryRaw`DELETE FROM "Registration"`;
+  await prisma.$queryRaw`DELETE FROM "Event"`;
+  await prisma.$queryRaw`DELETE FROM "Venue"`;
+  await prisma.$queryRaw`DELETE FROM "Organizer"`;
+  await prisma.$queryRaw`DELETE FROM "User"`;
 
-  const users = await prisma.user.createMany({
-    data: [
-      {
-        email: 'alice@example.com',
-        name: 'Alice',
-        role: UserRole.ADMIN,
-      },
-      {
-        email: 'bob@example.com',
-        name: 'Bob',
-        role: UserRole.USER,
-      },
-      {
-        email: 'carol@example.com',
-        name: 'Carol',
-        role: UserRole.USER,
-      },
-    ],
-    skipDuplicates: true,
-  });
+  // Users
+  const aliceId = randomUUID();
+  const bobId = randomUUID();
+  const carolId = randomUUID();
+  await prisma.$queryRaw`
+    INSERT INTO "User" (id, email, name, role, "updatedAt") VALUES
+    (${aliceId}, 'alice@example.com', 'Alice', 'ADMIN'::"UserRole", NOW()),
+    (${bobId}, 'bob@example.com', 'Bob', 'USER'::"UserRole", NOW()),
+    (${carolId}, 'carol@example.com', 'Carol', 'USER'::"UserRole", NOW())
+  `;
+  console.log('Created 3 users');
 
-  console.log(`Created ${users.count} users`);
+  // Organizer & Venue
+  const orgId = randomUUID();
+  await prisma.$queryRaw`
+    INSERT INTO "Organizer" (id, name, "updatedAt") VALUES (${orgId}, 'Evently Org', NOW())
+  `;
 
-  const organizer = await prisma.organizer.create({
-    data: {
-      name: 'Evently Org',
-    },
-  });
+  const venueId = randomUUID();
+  await prisma.$queryRaw`
+    INSERT INTO "Venue" (id, name, address, "updatedAt") VALUES (${venueId}, 'Grand Hall', '123 Main St, Paris', NOW())
+  `;
 
-  const venue = await prisma.venue.create({
-    data: {
-      name: 'Grand Hall',
-      address: '123 Main St, Paris',
-    },
-  });
+  // Events
+  const now = Date.now();
+  const start1 = new Date(now + 7 * 24 * 60 * 60 * 1000);
+  const end1 = new Date(start1.getTime() + 3 * 60 * 60 * 1000);
+  const start2 = new Date(now + 14 * 24 * 60 * 60 * 1000);
+  const end2 = new Date(start2.getTime() + 2 * 60 * 60 * 1000);
 
-  const [techEvent, meetupEvent] = await Promise.all([
-    prisma.event.create({
-      data: {
-        title: 'Tech Conference 2025',
-        description: 'A conference about modern web development',
-        startAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        endAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000),
-        capacity: 150,
-        status: 'PUBLISHED',
-        organizerId: organizer.id,
-        venueId: venue.id,
-      },
-    }),
-    prisma.event.create({
-      data: {
-        title: 'Community Meetup',
-        description: 'Monthly meetup for the Evently community',
-        startAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        endAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
-        capacity: 80,
-        status: 'PUBLISHED',
-        organizerId: organizer.id,
-        venueId: venue.id,
-      },
-    }),
-  ]);
+  const techEventId = randomUUID();
+  const meetupEventId = randomUUID();
 
-  console.log('Created events', techEvent.id, meetupEvent.id);
+  await prisma.$queryRaw`
+    INSERT INTO "Event" (id, title, description, "startAt", "endAt", capacity, status, "organizerId", "venueId", "updatedAt") VALUES
+    (${techEventId}, 'Tech Conference 2025', 'A conference about modern web development', ${start1}, ${end1}, 150, 'PUBLISHED'::"EventStatus", ${orgId}, ${venueId}, NOW()),
+    (${meetupEventId}, 'Community Meetup', 'Monthly meetup for the Evently community', ${start2}, ${end2}, 80, 'PUBLISHED'::"EventStatus", ${orgId}, ${venueId}, NOW())
+  `;
+  console.log('Created events', techEventId, meetupEventId);
 
-  const [alice, bob] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { email: 'alice@example.com' } }),
-    prisma.user.findUniqueOrThrow({ where: { email: 'bob@example.com' } }),
-  ]);
+  // Registrations & ticket
+  const regAliceTechId = randomUUID();
+  await prisma.$queryRaw`
+    INSERT INTO "Registration" (id, "userId", "eventId", status) VALUES
+    (${regAliceTechId}, ${aliceId}, ${techEventId}, 'CONFIRMED'::"RegistrationStatus")
+  `;
 
-  const techRegistration = await prisma.registration.create({
-    data: {
-      userId: alice.id,
-      eventId: techEvent.id,
-      status: RegistrationStatus.CONFIRMED,
-    },
-  });
+  const ticketId = randomUUID();
+  await prisma.$queryRaw`
+    INSERT INTO "Ticket" (id, "registrationId", price, status) VALUES
+    (${ticketId}, ${regAliceTechId}, 49.99, 'ISSUED'::"TicketStatus")
+  `;
 
-  await prisma.ticket.create({
-    data: {
-      registrationId: techRegistration.id,
-      price: 49.99,
-      status: TicketStatus.ISSUED,
-    },
-  });
+  const regBobMeetupId = randomUUID();
+  await prisma.$queryRaw`
+    INSERT INTO "Registration" (id, "userId", "eventId", status) VALUES
+    (${regBobMeetupId}, ${bobId}, ${meetupEventId}, 'PENDING'::"RegistrationStatus")
+  `;
 
-  await prisma.registration.create({
-    data: {
-      userId: bob.id,
-      eventId: meetupEvent.id,
-      status: RegistrationStatus.PENDING,
-    },
-  });
-
+  // Mongo: reset and append a few entries
   await connectMongo();
-
   const EventFeed = getEventFeedModel();
   const Comment = getCommentModel();
   const Checkin = getCheckinModel();
   const Photo = getPhotoModel();
-
   await Promise.all([
     EventFeed.deleteMany({}),
     Comment.deleteMany({}),
@@ -133,28 +101,17 @@ async function main() {
     Photo.deleteMany({}),
   ]);
 
-  await appendFeedEntry(techEvent.id, {
+  await appendFeedEntry(techEventId, {
     type: 'COMMENT',
-    payload: {
-      author: 'Alice',
-      message: 'Hâte de participer !',
-    },
+    payload: { author: 'Alice', message: 'Hâte de participer !' },
   });
-
-  await appendFeedEntry(techEvent.id, {
+  await appendFeedEntry(techEventId, {
     type: 'CHECKIN',
-    payload: {
-      attendee: { name: 'Alice', email: 'alice@example.com' },
-      source: 'QR',
-    },
+    payload: { attendee: { name: 'Alice', email: 'alice@example.com' }, source: 'QR' },
   });
-
-  await appendFeedEntry(meetupEvent.id, {
+  await appendFeedEntry(meetupEventId, {
     type: 'COMMENT',
-    payload: {
-      author: 'Bob',
-      message: 'Qui vient ce mois-ci ?',
-    },
+    payload: { author: 'Bob', message: 'Qui vient ce mois-ci ?' },
   });
 
   console.log('Seed completed');

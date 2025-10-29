@@ -104,3 +104,51 @@ export async function updateTicketStatus(registrationId: string, ticketId: strin
     status: updated.status as TicketStatus,
   };
 }
+
+export async function listTickets(registrationId: string) {
+  const rows = await prisma.$queryRaw<Array<{ id: string; registrationId: string; price: any; purchasedAt: Date; status: string }>>`
+    SELECT id, "registrationId", price, "purchasedAt", status
+    FROM "Ticket"
+    WHERE "registrationId" = ${registrationId}
+    ORDER BY "purchasedAt" DESC
+  `;
+  return rows.map((t) => ({
+    id: t.id,
+    registrationId: t.registrationId,
+    price: Number(t.price),
+    purchasedAt: new Date(t.purchasedAt),
+    status: t.status as TicketStatus,
+  }));
+}
+
+export async function getTicket(registrationId: string, ticketId: string) {
+  const rows = await prisma.$queryRaw<Array<{ id: string; registrationId: string; price: any; purchasedAt: Date; status: string }>>`
+    SELECT id, "registrationId", price, "purchasedAt", status
+    FROM "Ticket"
+    WHERE id = ${ticketId}
+  `;
+  if (rows.length === 0 || rows[0].registrationId !== registrationId) {
+    throw HttpError.notFound('Ticket not found');
+  }
+  const t = rows[0];
+  return {
+    id: t.id,
+    registrationId: t.registrationId,
+    price: Number(t.price),
+    purchasedAt: new Date(t.purchasedAt),
+    status: t.status as TicketStatus,
+  };
+}
+
+export async function deleteTicket(registrationId: string, ticketId: string) {
+  const rows = await prisma.$queryRaw<Array<{ id: string; registrationId: string }>>`
+    SELECT id, "registrationId" FROM "Ticket" WHERE id = ${ticketId}
+  `;
+  if (rows.length === 0 || rows[0].registrationId !== registrationId) {
+    throw HttpError.notFound('Ticket not found');
+  }
+
+  await prisma.$queryRaw`
+    DELETE FROM "Ticket" WHERE id = ${ticketId}
+  `;
+}

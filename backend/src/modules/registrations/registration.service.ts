@@ -48,6 +48,53 @@ function formatRegistration(row: RegistrationRow) {
   return base;
 }
 
+export async function listRegistrations(eventId?: string) {
+  const rows = eventId
+    ? await prisma.$queryRaw<Array<RegistrationRow>>`
+        SELECT r.id, r."userId", r."eventId", r.status, r."createdAt",
+               u.id AS user_id, u.name AS user_name, u.email AS user_email, u.role AS user_role,
+               e.title AS event_title, e.status AS event_status,
+               t.id AS ticket_id, t.price AS ticket_price, t."purchasedAt" AS ticket_purchasedAt, t.status AS ticket_status
+        FROM "Registration" r
+        JOIN "User" u ON u.id = r."userId"
+        JOIN "Event" e ON e.id = r."eventId"
+        LEFT JOIN "Ticket" t ON t."registrationId" = r.id
+        WHERE r."eventId" = ${eventId}
+        ORDER BY r."createdAt" DESC
+      `
+    : await prisma.$queryRaw<Array<RegistrationRow>>`
+        SELECT r.id, r."userId", r."eventId", r.status, r."createdAt",
+               u.id AS user_id, u.name AS user_name, u.email AS user_email, u.role AS user_role,
+               e.title AS event_title, e.status AS event_status,
+               t.id AS ticket_id, t.price AS ticket_price, t."purchasedAt" AS ticket_purchasedAt, t.status AS ticket_status
+        FROM "Registration" r
+        JOIN "User" u ON u.id = r."userId"
+        JOIN "Event" e ON e.id = r."eventId"
+        LEFT JOIN "Ticket" t ON t."registrationId" = r.id
+        ORDER BY r."createdAt" DESC
+      `;
+
+  return rows.map(formatRegistration);
+}
+
+export async function getRegistrationById(id: string) {
+  const rows = await prisma.$queryRaw<Array<RegistrationRow>>`
+    SELECT r.id, r."userId", r."eventId", r.status, r."createdAt",
+           u.id AS user_id, u.name AS user_name, u.email AS user_email, u.role AS user_role,
+           e.title AS event_title, e.status AS event_status,
+           t.id AS ticket_id, t.price AS ticket_price, t."purchasedAt" AS ticket_purchasedAt, t.status AS ticket_status
+    FROM "Registration" r
+    JOIN "User" u ON u.id = r."userId"
+    JOIN "Event" e ON e.id = r."eventId"
+    LEFT JOIN "Ticket" t ON t."registrationId" = r.id
+    WHERE r.id = ${id}
+  `;
+  if (rows.length === 0) {
+    throw HttpError.notFound('Registration not found');
+  }
+  return formatRegistration(rows[0]);
+}
+
 export async function createRegistration(eventId: string, input: unknown) {
   const data = createRegistrationSchema.parse(input);
 

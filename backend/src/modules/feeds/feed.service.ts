@@ -493,3 +493,49 @@ export async function updateFeedEntry(eventId: string, entryId: string, payload:
     ts: ts.toISOString(),
   };
 }
+
+export async function deleteFeedEntry(eventId: string, entryId: string) {
+  let objectId: Types.ObjectId;
+  try {
+    objectId = new Types.ObjectId(entryId);
+  } catch {
+    throw HttpError.badRequest('Invalid feed entry id');
+  }
+
+  await connectMongo();
+  await migrateLegacyFeedEntries(eventId);
+
+  const EventFeed = getEventFeedModel();
+  const feedDocument = await EventFeed.findOne({ eventId, 'entries.itemId': objectId });
+  if (!feedDocument) {
+    throw HttpError.notFound('Feed entry not found');
+  }
+
+  const entryIdString = objectId.toString();
+  const matchingEntry = (feedDocument.entries as FeedReference[]).find((entry) => {
+    if (entry.itemId instanceof Types.ObjectId) {
+      return entry.itemId.equals(objectId);
+    }
+    return String(entry.itemId) === entryIdString;
+  });
+
+  if (!matchingEntry) {
+    throw HttpError.notFound('Feed entry not found');
+  }
+
+  if (matchingEntry.type === 'COMMENT') {
+    const Comment = getCommentModel();
+    await Comment.findOneAndDelete({ _id: objectId, eventId });
+  } else if (matchingEntry.type === 'CHECKIN') {
+    const Checkin = getCheckinModel();
+    await Checkin.findOneAndDelete({ _id: objectId, eventId });
+  } else if (matchingEntry.type === 'PHOTO') {
+    const Photo = getPhotoModel();
+    await Photo.findOneAndDelete({ _id: objectId, eventId });
+  }
+
+  await EventFeed.updateOne(
+    { eventId },
+    { $pull: { entries: { itemId: objectId } } }
+  );
+}
