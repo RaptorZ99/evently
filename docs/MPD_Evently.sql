@@ -1,16 +1,10 @@
--- CreateEnum
+-- CreateEnums
 CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'USER');
-
--- CreateEnum
 CREATE TYPE "EventStatus" AS ENUM ('DRAFT', 'PUBLISHED', 'CLOSED');
-
--- CreateEnum
 CREATE TYPE "RegistrationStatus" AS ENUM ('PENDING', 'CONFIRMED', 'CANCELLED');
-
--- CreateEnum
 CREATE TYPE "TicketStatus" AS ENUM ('ISSUED', 'USED', 'REFUNDED');
 
--- CreateTable
+-- CreateTables
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -21,8 +15,6 @@ CREATE TABLE "User" (
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
-
--- CreateTable
 CREATE TABLE "Organizer" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -31,8 +23,6 @@ CREATE TABLE "Organizer" (
 
     CONSTRAINT "Organizer_pkey" PRIMARY KEY ("id")
 );
-
--- CreateTable
 CREATE TABLE "Venue" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -42,8 +32,6 @@ CREATE TABLE "Venue" (
 
     CONSTRAINT "Venue_pkey" PRIMARY KEY ("id")
 );
-
--- CreateTable
 CREATE TABLE "Event" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
@@ -59,8 +47,6 @@ CREATE TABLE "Event" (
 
     CONSTRAINT "Event_pkey" PRIMARY KEY ("id")
 );
-
--- CreateTable
 CREATE TABLE "Registration" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -70,8 +56,6 @@ CREATE TABLE "Registration" (
 
     CONSTRAINT "Registration_pkey" PRIMARY KEY ("id")
 );
-
--- CreateTable
 CREATE TABLE "Ticket" (
     "id" TEXT NOT NULL,
     "registrationId" TEXT NOT NULL,
@@ -82,55 +66,27 @@ CREATE TABLE "Ticket" (
     CONSTRAINT "Ticket_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
+-- CreateIndexes
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
-
--- CreateIndex
 CREATE INDEX "User_role_idx" ON "User"("role");
-
--- CreateIndex
 CREATE UNIQUE INDEX "Organizer_name_key" ON "Organizer"("name");
-
--- CreateIndex
 CREATE INDEX "Event_startAt_idx" ON "Event"("startAt");
-
--- CreateIndex
 CREATE INDEX "Event_status_idx" ON "Event"("status");
-
--- CreateIndex
 CREATE UNIQUE INDEX "Event_title_startAt_key" ON "Event"("title", "startAt");
-
--- CreateIndex
 CREATE INDEX "Registration_eventId_idx" ON "Registration"("eventId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "Registration_userId_eventId_key" ON "Registration"("userId", "eventId");
-
--- CreateIndex
 CREATE INDEX "Ticket_registrationId_idx" ON "Ticket"("registrationId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "Ticket_registrationId_key" ON "Ticket"("registrationId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "Venue_name_address_key" ON "Venue"("name", "address");
 
--- AddForeignKey
+-- AddForeignKeys
 ALTER TABLE "Event" ADD CONSTRAINT "Event_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "Organizer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Event" ADD CONSTRAINT "Event_venueId_fkey" FOREIGN KEY ("venueId") REFERENCES "Venue"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Registration" ADD CONSTRAINT "Registration_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Registration" ADD CONSTRAINT "Registration_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Ticket" ADD CONSTRAINT "Ticket_registrationId_fkey" FOREIGN KEY ("registrationId") REFERENCES "Registration"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- Checks complémentaires
+-- ComplementaryChecks
 ALTER TABLE "Event" ADD CONSTRAINT "Event_capacity_chk" CHECK ("capacity" >= 0);
 ALTER TABLE "Event" ADD CONSTRAINT "Event_dates_chk" CHECK ("endAt" > "startAt");
 ALTER TABLE "Ticket" ADD CONSTRAINT "Ticket_price_chk" CHECK ("price" >= 0);
