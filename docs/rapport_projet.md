@@ -174,28 +174,40 @@ L'imbrication est à privilégier lorsque les sous-documents sont petits, en nom
 **PostgreSQL**
 
 ```sql
--- Liste des événements avec organisateur, lieu et nombre d'inscriptions
-SELECT e.id, e.title, e."startAt", e."endAt", e.capacity, e.status,
-       o.name AS organizer_name,
-       v.name AS venue_name,
-       COALESCE(COUNT(r.id), 0) AS registration_count
+-- Afficher les événements avec leur contexte complet
+SELECT e.id, e.title, e.description, e."startAt", e."endAt", e.capacity, e.status,
+       e."organizerId", e."venueId", e."createdAt", e."updatedAt",
+       o.id AS organizer_id, o.name AS organizer_name,
+       v.id AS venue_id, v.name AS venue_name, v.address AS venue_address,
+       COALESCE(COUNT(r.id), 0)::int AS registration_count
 FROM "Event" e
 JOIN "Organizer" o ON o.id = e."organizerId"
 JOIN "Venue" v ON v.id = e."venueId"
 LEFT JOIN "Registration" r ON r."eventId" = e.id
-GROUP BY e.id, o.name, v.name
+GROUP BY e.id, o.id, v.id
 ORDER BY e."startAt" ASC;
 ```
 
 **MongoDB**
 
 ```javascript
-// Répartition des entrées par type (aggregate sur event_feeds)
+// Répartition des entrées d'un événement par type
 db.event_feeds.aggregate([
   { $match: { eventId: "<uuid>" } },
-  { $unwind: "$entries" },
-  { $group: { _id: "$entries.type", count: { $sum: 1 } } },
-  { $project: { _id: 0, type: "$_id", count: 1 } }
+  { $unwind: '$entries' },
+  {
+    $group: {
+      _id: '$entries.type',
+      count: { $sum: 1 },
+    },
+  },
+  {
+    $project: {
+      _id: 0,
+      type: '$_id',
+      count: 1,
+    },
+  },
 ]);
 ```
 
