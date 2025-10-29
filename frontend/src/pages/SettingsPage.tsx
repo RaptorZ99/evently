@@ -7,6 +7,9 @@ import {
   deleteOrganizer,
   deleteUser,
   deleteVenue,
+  updateOrganizer,
+  updateUser,
+  updateVenue,
   fetchOrganizers,
   fetchUsers,
   fetchVenues,
@@ -27,6 +30,24 @@ export default function SettingsPage() {
   const [userForm, setUserForm] = useState<{ name: string; email: string; role: User['role'] }>(
     { name: '', email: '', role: 'USER' }
   );
+  const [editingOrganizerId, setEditingOrganizerId] = useState<string | null>(null);
+  const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+
+  function resetOrganizerForm() {
+    setOrganizerName('');
+    setEditingOrganizerId(null);
+  }
+
+  function resetVenueForm() {
+    setVenueForm({ name: '', address: '' });
+    setEditingVenueId(null);
+  }
+
+  function resetUserForm() {
+    setUserForm({ name: '', email: '', role: 'USER' });
+    setEditingUserId(null);
+  }
 
   const handleFeedback = useCallback((message: string, type: 'success' | 'error') => {
     setFeedback({ type, message });
@@ -56,7 +77,7 @@ export default function SettingsPage() {
     void loadAll();
   }, [loadAll]);
 
-  async function handleCreateOrganizer(event: FormEvent) {
+  async function handleSubmitOrganizer(event: FormEvent) {
     event.preventDefault();
     const trimmed = organizerName.trim();
     if (!trimmed) {
@@ -65,16 +86,26 @@ export default function SettingsPage() {
     }
 
     try {
-      const created = await createOrganizer({ name: trimmed });
-      setOrganizers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setOrganizerName('');
-      handleFeedback('Organisateur créé.', 'success');
+      if (editingOrganizerId) {
+        const updated = await updateOrganizer(editingOrganizerId, { name: trimmed });
+        setOrganizers((current) => {
+          const next = current.map((item) => (item.id === updated.id ? updated : item));
+          return [...next].sort((a, b) => a.name.localeCompare(b.name));
+        });
+        handleFeedback('Organisateur mis à jour.', 'success');
+      } else {
+        const created = await createOrganizer({ name: trimmed });
+        setOrganizers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+        handleFeedback('Organisateur créé.', 'success');
+      }
+      resetOrganizerForm();
     } catch (error) {
-      handleFeedback(error instanceof Error ? error.message : 'Création impossible', 'error');
+      const fallback = editingOrganizerId ? 'Mise à jour impossible' : 'Création impossible';
+      handleFeedback(error instanceof Error ? error.message : fallback, 'error');
     }
   }
 
-  async function handleCreateVenue(event: FormEvent) {
+  async function handleSubmitVenue(event: FormEvent) {
     event.preventDefault();
     const name = venueForm.name.trim();
     const address = venueForm.address.trim();
@@ -84,16 +115,26 @@ export default function SettingsPage() {
     }
 
     try {
-      const created = await createVenue({ name, address });
-      setVenues((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setVenueForm({ name: '', address: '' });
-      handleFeedback('Lieu créé.', 'success');
+      if (editingVenueId) {
+        const updated = await updateVenue(editingVenueId, { name, address });
+        setVenues((current) => {
+          const next = current.map((item) => (item.id === updated.id ? updated : item));
+          return [...next].sort((a, b) => a.name.localeCompare(b.name));
+        });
+        handleFeedback('Lieu mis à jour.', 'success');
+      } else {
+        const created = await createVenue({ name, address });
+        setVenues((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+        handleFeedback('Lieu créé.', 'success');
+      }
+      resetVenueForm();
     } catch (error) {
-      handleFeedback(error instanceof Error ? error.message : 'Création impossible', 'error');
+      const fallback = editingVenueId ? 'Mise à jour impossible' : 'Création impossible';
+      handleFeedback(error instanceof Error ? error.message : fallback, 'error');
     }
   }
 
-  async function handleCreateUser(event: FormEvent) {
+  async function handleSubmitUser(event: FormEvent) {
     event.preventDefault();
     const name = userForm.name.trim();
     const email = userForm.email.trim();
@@ -103,12 +144,22 @@ export default function SettingsPage() {
     }
 
     try {
-      const created = await createUser({ name, email, role: userForm.role });
-      setUsers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
-      setUserForm({ name: '', email: '', role: 'USER' });
-      handleFeedback('Participant créé.', 'success');
+      if (editingUserId) {
+        const updated = await updateUser(editingUserId, { name, email, role: userForm.role });
+        setUsers((current) => {
+          const next = current.map((item) => (item.id === updated.id ? updated : item));
+          return [...next].sort((a, b) => a.name.localeCompare(b.name));
+        });
+        handleFeedback('Participant mis à jour.', 'success');
+      } else {
+        const created = await createUser({ name, email, role: userForm.role });
+        setUsers((current) => [...current, created].sort((a, b) => a.name.localeCompare(b.name)));
+        handleFeedback('Participant créé.', 'success');
+      }
+      resetUserForm();
     } catch (error) {
-      handleFeedback(error instanceof Error ? error.message : 'Création impossible', 'error');
+      const fallback = editingUserId ? 'Mise à jour impossible' : 'Création impossible';
+      handleFeedback(error instanceof Error ? error.message : fallback, 'error');
     }
   }
 
@@ -119,6 +170,9 @@ export default function SettingsPage() {
     try {
       await deleteOrganizer(organizer.id);
       setOrganizers((current) => current.filter((item) => item.id !== organizer.id));
+      if (editingOrganizerId === organizer.id) {
+        resetOrganizerForm();
+      }
       handleFeedback('Organisateur supprimé.', 'success');
     } catch (error) {
       handleFeedback(error instanceof Error ? error.message : 'Suppression impossible', 'error');
@@ -132,6 +186,9 @@ export default function SettingsPage() {
     try {
       await deleteVenue(venue.id);
       setVenues((current) => current.filter((item) => item.id !== venue.id));
+      if (editingVenueId === venue.id) {
+        resetVenueForm();
+      }
       handleFeedback('Lieu supprimé.', 'success');
     } catch (error) {
       handleFeedback(error instanceof Error ? error.message : 'Suppression impossible', 'error');
@@ -145,10 +202,28 @@ export default function SettingsPage() {
     try {
       await deleteUser(user.id);
       setUsers((current) => current.filter((item) => item.id !== user.id));
+      if (editingUserId === user.id) {
+        resetUserForm();
+      }
       handleFeedback('Participant supprimé.', 'success');
     } catch (error) {
       handleFeedback(error instanceof Error ? error.message : 'Suppression impossible', 'error');
     }
+  }
+
+  function beginEditOrganizer(organizer: Organizer) {
+    setEditingOrganizerId(organizer.id);
+    setOrganizerName(organizer.name);
+  }
+
+  function beginEditVenue(venue: Venue) {
+    setEditingVenueId(venue.id);
+    setVenueForm({ name: venue.name, address: venue.address });
+  }
+
+  function beginEditUser(user: User) {
+    setEditingUserId(user.id);
+    setUserForm({ name: user.name, email: user.email, role: user.role });
   }
 
   return (
@@ -183,19 +258,33 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold text-slate-900">Organisateurs</h2>
                 <p className="text-sm text-slate-500">Utilisés pour attribuer la responsabilité d’un événement.</p>
               </div>
-              <form onSubmit={handleCreateOrganizer} className="flex flex-col gap-2 md:w-80">
+              <form onSubmit={handleSubmitOrganizer} className="flex flex-col gap-2 md:w-80">
+                {editingOrganizerId && (
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">En édition</span>
+                )}
                 <input
                   value={organizerName}
                   onChange={(event) => setOrganizerName(event.target.value)}
                   placeholder="Nom de l’organisateur"
                   className="rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
                 />
-                <button
-                  type="submit"
-                  className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  Ajouter
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {editingOrganizerId ? 'Modifier' : 'Ajouter'}
+                  </button>
+                  {editingOrganizerId && (
+                    <button
+                      type="button"
+                      onClick={resetOrganizerForm}
+                      className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      Annuler
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
             <ul className="mt-4 divide-y divide-slate-200">
@@ -205,13 +294,26 @@ export default function SettingsPage() {
                 organizers.map((organizer) => (
                   <li key={organizer.id} className="flex items-center justify-between py-3 text-sm text-slate-700">
                     <span>{organizer.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => void confirmAndDeleteOrganizer(organizer)}
-                      className="text-sm font-medium text-rose-600 hover:text-rose-500"
-                    >
-                      Supprimer
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {editingOrganizerId === organizer.id ? (
+                        <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">En édition</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => beginEditOrganizer(organizer)}
+                          className="text-sm font-medium text-slate-600 hover:text-slate-800"
+                        >
+                          Modifier
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void confirmAndDeleteOrganizer(organizer)}
+                        className="text-sm font-medium text-rose-600 hover:text-rose-500"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </li>
                 ))
               )}
@@ -224,7 +326,10 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold text-slate-900">Lieux</h2>
                 <p className="text-sm text-slate-500">Précisent où se déroule l’événement.</p>
               </div>
-              <form onSubmit={handleCreateVenue} className="flex flex-col gap-2 md:w-80">
+              <form onSubmit={handleSubmitVenue} className="flex flex-col gap-2 md:w-80">
+                {editingVenueId && (
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">En édition</span>
+                )}
                 <input
                   value={venueForm.name}
                   onChange={(event) => setVenueForm((current) => ({ ...current, name: event.target.value }))}
@@ -237,12 +342,23 @@ export default function SettingsPage() {
                   placeholder="Adresse"
                   className="rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
                 />
-                <button
-                  type="submit"
-                  className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  Ajouter
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {editingVenueId ? 'Modifier' : 'Ajouter'}
+                  </button>
+                  {editingVenueId && (
+                    <button
+                      type="button"
+                      onClick={resetVenueForm}
+                      className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      Annuler
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
             <ul className="mt-4 divide-y divide-slate-200">
@@ -255,13 +371,26 @@ export default function SettingsPage() {
                       {venue.name}
                       <span className="ml-2 text-xs text-slate-500">{venue.address}</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => void confirmAndDeleteVenue(venue)}
-                      className="text-sm font-medium text-rose-600 hover:text-rose-500"
-                    >
-                      Supprimer
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {editingVenueId === venue.id ? (
+                        <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">En édition</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => beginEditVenue(venue)}
+                          className="text-sm font-medium text-slate-600 hover:text-slate-800"
+                        >
+                          Modifier
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void confirmAndDeleteVenue(venue)}
+                        className="text-sm font-medium text-rose-600 hover:text-rose-500"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </li>
                 ))
               )}
@@ -274,7 +403,12 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold text-slate-900">Participants</h2>
                 <p className="text-sm text-slate-500">Disponibles lors des inscriptions aux événements.</p>
               </div>
-              <form onSubmit={handleCreateUser} className="grid gap-2 md:w-[420px] md:grid-cols-2">
+              <form onSubmit={handleSubmitUser} className="grid gap-2 md:w-[420px] md:grid-cols-2">
+                {editingUserId && (
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 md:col-span-2">
+                    En édition
+                  </span>
+                )}
                 <input
                   value={userForm.name}
                   onChange={(event) => setUserForm((current) => ({ ...current, name: event.target.value }))}
@@ -298,12 +432,23 @@ export default function SettingsPage() {
                   <option value="USER">Participant</option>
                   <option value="ADMIN">Administrateur</option>
                 </select>
-                <button
-                  type="submit"
-                  className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 md:col-span-1"
-                >
-                  Ajouter
-                </button>
+                <div className="flex gap-2 md:col-span-2">
+                  <button
+                    type="submit"
+                    className="rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {editingUserId ? 'Modifier' : 'Ajouter'}
+                  </button>
+                  {editingUserId && (
+                    <button
+                      type="button"
+                      onClick={resetUserForm}
+                      className="rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                    >
+                      Annuler
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
             <ul className="mt-4 divide-y divide-slate-200">
@@ -314,15 +459,30 @@ export default function SettingsPage() {
                   <li key={user.id} className="flex items-center justify-between py-3 text-sm text-slate-700">
                     <span>
                       {user.name}
-                      <span className="ml-2 text-xs text-slate-500">{user.email}</span>
+                      <span className="ml-2 text-xs text-slate-500">
+                        {user.email} · {user.role === 'ADMIN' ? 'Administrateur' : 'Participant'}
+                      </span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => void confirmAndDeleteUser(user)}
-                      className="text-sm font-medium text-rose-600 hover:text-rose-500"
-                    >
-                      Supprimer
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {editingUserId === user.id ? (
+                        <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">En édition</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => beginEditUser(user)}
+                          className="text-sm font-medium text-slate-600 hover:text-slate-800"
+                        >
+                          Modifier
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void confirmAndDeleteUser(user)}
+                        className="text-sm font-medium text-rose-600 hover:text-rose-500"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </li>
                 ))
               )}

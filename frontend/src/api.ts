@@ -108,6 +108,13 @@ export function createOrganizer(payload: { name: string }): Promise<Organizer> {
   });
 }
 
+export function updateOrganizer(id: string, payload: { name: string }): Promise<Organizer> {
+  return request<Organizer>(`/api/organizers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function deleteOrganizer(id: string): Promise<void> {
   return request<void>(`/api/organizers/${id}`, {
     method: 'DELETE',
@@ -121,6 +128,13 @@ export function createVenue(payload: { name: string; address: string }): Promise
   });
 }
 
+export function updateVenue(id: string, payload: { name?: string; address?: string }): Promise<Venue> {
+  return request<Venue>(`/api/venues/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function deleteVenue(id: string): Promise<void> {
   return request<void>(`/api/venues/${id}`, {
     method: 'DELETE',
@@ -130,6 +144,13 @@ export function deleteVenue(id: string): Promise<void> {
 export function createUser(payload: { name: string; email: string; role?: 'ADMIN' | 'USER' }): Promise<User> {
   return request<User>(`/api/users`, {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUser(id: string, payload: { name?: string; email?: string; role?: 'ADMIN' | 'USER' }): Promise<User> {
+  return request<User>(`/api/users/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }
