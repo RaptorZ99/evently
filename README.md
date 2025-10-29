@@ -8,6 +8,7 @@ npm run docker:up
 ```
 Liens utiles:
 - Frontend: http://localhost:3000
+- Backend : http://localhost:3001
 - API docs (Swagger): http://localhost:3001/docs
 
 Arrêt/nettoyage: `npm run docker:down` · Logs backend: `npm run docker:logs`
