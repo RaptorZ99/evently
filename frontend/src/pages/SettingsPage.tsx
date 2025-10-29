@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import {
   createOrganizer,
@@ -28,11 +28,12 @@ export default function SettingsPage() {
     { name: '', email: '', role: 'USER' }
   );
 
-  useEffect(() => {
-    void loadAll();
+  const handleFeedback = useCallback((message: string, type: 'success' | 'error') => {
+    setFeedback({ type, message });
+    window.setTimeout(() => setFeedback(null), 3500);
   }, []);
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     try {
       const [organizerResponse, venueResponse, userResponse] = await Promise.all([
@@ -49,12 +50,11 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [handleFeedback]);
 
-  function handleFeedback(message: string, type: 'success' | 'error') {
-    setFeedback({ type, message });
-    window.setTimeout(() => setFeedback(null), 3500);
-  }
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
   async function handleCreateOrganizer(event: FormEvent) {
     event.preventDefault();

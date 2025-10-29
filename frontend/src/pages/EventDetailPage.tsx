@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   appendFeedEntry,
   deleteEvent,
+  deleteFeedEntry,
   fetchAnalytics,
   fetchEventDetail,
   fetchEventFeed,
@@ -76,6 +77,11 @@ export default function EventDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [editingEntry, setEditingEntry] = useState<FeedEntry | null>(null);
+  const [deletingFeedEntryId, setDeletingFeedEntryId] = useState<string | null>(null);
+  const COMMENT_AUTHOR_ANONYMOUS = 'ANONYMOUS';
+  const COMMENT_AUTHOR_CUSTOM = 'CUSTOM';
+  const [feedCommentAuthorSelection, setFeedCommentAuthorSelection] = useState<string>(COMMENT_AUTHOR_ANONYMOUS);
+  const [feedCommentCustomAuthor, setFeedCommentCustomAuthor] = useState('');
   const [deletingEvent, setDeletingEvent] = useState(false);
 
   const ticketEligibleRegistrations = useMemo(
@@ -85,6 +91,21 @@ export default function EventDetailPage() {
       ) ?? [],
     [event?.registrations]
   );
+  const eventParticipants = useMemo(() => {
+    if (!event) {
+      return [] as User[];
+    }
+    const participants = new Map<string, User>();
+    for (const registration of event.registrations) {
+      if (registration.status === 'CANCELLED') {
+        continue;
+      }
+      if (!participants.has(registration.user.id)) {
+        participants.set(registration.user.id, registration.user);
+      }
+    }
+    return Array.from(participants.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [event]);
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId) ?? null,
     [selectedUserId, users]
@@ -101,13 +122,7 @@ export default function EventDetailPage() {
     return eligible?.id ?? '';
   }
 
-  useEffect(() => {
-    if (!id) return;
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
@@ -126,23 +141,29 @@ export default function EventDetailPage() {
       const sortedUsers = [...usersResponse].sort((a, b) => a.name.localeCompare(b.name));
       setUsers(sortedUsers);
 
-      if (!selectedUserId || !sortedUsers.find((user) => user.id === selectedUserId)) {
-        if (sortedUsers.length > 0) {
-          setSelectedUserId(sortedUsers[0].id);
+      setSelectedUserId((current) => {
+        if (current && sortedUsers.some((user) => user.id === current)) {
+          return current;
         }
-      }
+        if (sortedUsers.length > 0) {
+          return sortedUsers[0].id;
+        }
+        return '';
+      });
 
       const defaultRegistrationId = getFirstEligibleRegistrationId(eventResponse.registrations);
-      const isCurrentEligible = eventResponse.registrations.some(
-        (registration) =>
-          registration.id === selectedRegistrationId &&
-          registration.status !== 'CANCELLED' &&
-          !registration.ticket
-      );
-
-      if (!isCurrentEligible) {
-        setSelectedRegistrationId(defaultRegistrationId);
-      }
+      setSelectedRegistrationId((current) => {
+        const isCurrentEligible = eventResponse.registrations.some(
+          (registration) =>
+            registration.id === current &&
+            registration.status !== 'CANCELLED' &&
+            !registration.ticket
+        );
+        if (isCurrentEligible) {
+          return current;
+        }
+        return defaultRegistrationId;
+      });
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -152,7 +173,11 @@ export default function EventDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [id]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
   async function refreshEvent() {
     if (!id) return;
@@ -188,6 +213,8 @@ export default function EventDetailPage() {
     setFeedComment({ message: '' });
     setFeedCheckin({ name: '', email: '', source: '' });
     setFeedPhoto({ url: '', caption: '' });
+    setFeedCommentAuthorSelection(COMMENT_AUTHOR_ANONYMOUS);
+    setFeedCommentCustomAuthor('');
   }
 
   function beginFeedEdit(entry: FeedEntry) {
@@ -196,6 +223,19 @@ export default function EventDetailPage() {
 
     if (entry.type === 'COMMENT') {
       setFeedComment({ message: entry.payload.message });
+      if (entry.payload.author) {
+        const matchingParticipant = eventParticipants.find((participant) => participant.name === entry.payload.author);
+        if (matchingParticipant) {
+          setFeedCommentAuthorSelection(matchingParticipant.id);
+          setFeedCommentCustomAuthor('');
+        } else {
+          setFeedCommentAuthorSelection(COMMENT_AUTHOR_CUSTOM);
+          setFeedCommentCustomAuthor(entry.payload.author);
+        }
+      } else {
+        setFeedCommentAuthorSelection(COMMENT_AUTHOR_ANONYMOUS);
+        setFeedCommentCustomAuthor('');
+      }
     } else if (entry.type === 'CHECKIN') {
       setFeedCheckin({
         name: entry.payload.attendee.name,
@@ -317,12 +357,31 @@ export default function EventDetailPage() {
         showToast({ type: 'error', message: 'Le message du commentaire est requis.' });
         return;
       }
-      const author = editingEntry?.type === 'COMMENT' ? editingEntry.payload.author : selectedUser?.name;
+      let authorName: string | undefined;
+      if (feedCommentAuthorSelection === COMMENT_AUTHOR_CUSTOM) {
+        const customAuthor = feedCommentCustomAuthor.trim();
+        if (!customAuthor) {
+          showToast({ type: 'error', message: 'Veuillez renseigner le nom de l’auteur.' });
+          return;
+        }
+        authorName = customAuthor;
+      } else if (feedCommentAuthorSelection === COMMENT_AUTHOR_ANONYMOUS) {
+        authorName = undefined;
+      } else {
+        const selectedParticipant = eventParticipants.find(
+          (participant) => participant.id === feedCommentAuthorSelection
+        );
+        if (!selectedParticipant) {
+          showToast({ type: 'error', message: 'Auteur sélectionné introuvable.' });
+          return;
+        }
+        authorName = selectedParticipant.name;
+      }
       entry = {
         type: 'COMMENT',
         payload: {
           message,
-          author: author ?? undefined,
+          ...(authorName ? { author: authorName } : {}),
         },
       };
     } else if (feedType === 'CHECKIN') {
@@ -372,11 +431,34 @@ export default function EventDetailPage() {
         showToast({ type: 'success', message: 'Entrée ajoutée.' });
       }
       resetFeedForms();
-      setFeedType('COMMENT');
       setEditingEntry(null);
       await refreshFeed();
     } catch (err) {
       showToast({ type: 'error', message: err instanceof Error ? err.message : 'Impossible d\'enregistrer le flux' });
+    }
+  }
+
+  async function handleDeleteFeedEntry(entry: FeedEntry) {
+    if (!id) return;
+    if (!window.confirm('Supprimer cette entrée du flux ?')) {
+      return;
+    }
+
+    setDeletingFeedEntryId(entry.itemId);
+    try {
+      await deleteFeedEntry(id, entry.itemId);
+      if (editingEntry?.itemId === entry.itemId) {
+        cancelFeedEdit();
+      }
+      await refreshFeed();
+      showToast({ type: 'success', message: 'Entrée supprimée.' });
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Impossible de supprimer l’entrée du flux',
+      });
+    } finally {
+      setDeletingFeedEntryId(null);
     }
   }
 
@@ -555,16 +637,46 @@ export default function EventDetailPage() {
             </label>
 
             {feedType === 'COMMENT' && (
-              <label className="block text-sm font-medium text-slate-700">
-                Message
-                <textarea
-                  value={feedComment.message}
-                  onChange={(event) => setFeedComment({ message: event.target.value })}
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  rows={3}
-                  placeholder="Partager une actualité..."
-                />
-              </label>
+              <div className="grid gap-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Auteur du commentaire
+                  <select
+                    value={feedCommentAuthorSelection}
+                    onChange={(event) => setFeedCommentAuthorSelection(event.target.value)}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                  >
+                    <option value={COMMENT_AUTHOR_ANONYMOUS}>Anonyme</option>
+                    {eventParticipants.map((participant) => (
+                      <option key={participant.id} value={participant.id}>
+                        {participant.name}
+                        {participant.email ? ` — ${participant.email}` : ''}
+                      </option>
+                    ))}
+                    <option value={COMMENT_AUTHOR_CUSTOM}>Autre…</option>
+                  </select>
+                </label>
+                {feedCommentAuthorSelection === COMMENT_AUTHOR_CUSTOM && (
+                  <label className="block text-sm font-medium text-slate-700">
+                    Nom de l’auteur
+                    <input
+                      value={feedCommentCustomAuthor}
+                      onChange={(event) => setFeedCommentCustomAuthor(event.target.value)}
+                      className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                      placeholder="Nom de l’auteur"
+                    />
+                  </label>
+                )}
+                <label className="block text-sm font-medium text-slate-700">
+                  Message
+                  <textarea
+                    value={feedComment.message}
+                    onChange={(event) => setFeedComment({ message: event.target.value })}
+                    className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+                    rows={3}
+                    placeholder="Partager une actualité..."
+                  />
+                </label>
+              </div>
             )}
 
             {feedType === 'CHECKIN' && (
@@ -648,6 +760,7 @@ export default function EventDetailPage() {
               feed.map((entry) => {
                 const timestamp = new Date(entry.ts).toLocaleString();
                 const isEntryEditing = editingEntry?.itemId === entry.itemId;
+                const isEntryDeleting = deletingFeedEntryId === entry.itemId;
                 const baseClasses = 'rounded border bg-white p-4 shadow-sm transition';
                 const highlightClasses = isEntryEditing ? ' border-slate-400 ring-1 ring-slate-300' : ' border-slate-200';
 
@@ -660,13 +773,23 @@ export default function EventDetailPage() {
                           <p className="text-sm text-slate-700">{message}</p>
                           <p className="mt-2 text-xs text-slate-500">{author ?? 'Anonyme'} · {timestamp}</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => beginFeedEdit(entry)}
-                          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                        >
-                          {isEntryEditing ? 'En édition' : 'Modifier'}
-                        </button>
+                        <div className="flex flex-col items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => beginFeedEdit(entry)}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                          >
+                            {isEntryEditing ? 'En édition' : 'Modifier'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFeedEntry(entry)}
+                            disabled={isEntryDeleting}
+                            className="text-xs font-semibold text-rose-500 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isEntryDeleting ? 'Suppression…' : 'Supprimer'}
+                          </button>
+                        </div>
                       </div>
                     </li>
                   );
@@ -688,13 +811,23 @@ export default function EventDetailPage() {
                           </p>
                           <p className="mt-1 text-xs text-emerald-600">{source ? `Source: ${source} · ` : ''}{timestamp}</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => beginFeedEdit(entry)}
-                          className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
-                        >
-                          {isEntryEditing ? 'En édition' : 'Modifier'}
-                        </button>
+                        <div className="flex flex-col items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => beginFeedEdit(entry)}
+                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                          >
+                            {isEntryEditing ? 'En édition' : 'Modifier'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFeedEntry(entry)}
+                            disabled={isEntryDeleting}
+                            className="text-xs font-semibold text-rose-500 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isEntryDeleting ? 'Suppression…' : 'Supprimer'}
+                          </button>
+                        </div>
                       </div>
                     </li>
                   );
@@ -711,13 +844,23 @@ export default function EventDetailPage() {
                         {caption && <p className="text-sm text-slate-700">{caption}</p>}
                         <p className="text-xs text-slate-500">{timestamp}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => beginFeedEdit(entry)}
-                        className="text-xs font-semibold text-slate-500 hover:text-slate-700"
-                      >
-                        {isEntryEditing ? 'En édition' : 'Modifier'}
-                      </button>
+                      <div className="flex flex-col items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => beginFeedEdit(entry)}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        >
+                          {isEntryEditing ? 'En édition' : 'Modifier'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFeedEntry(entry)}
+                          disabled={isEntryDeleting}
+                          className="text-xs font-semibold text-rose-500 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isEntryDeleting ? 'Suppression…' : 'Supprimer'}
+                        </button>
+                      </div>
                     </div>
                   </li>
                 );

@@ -200,6 +200,12 @@ export function updateFeedEntry(eventId: string, entryId: string, entry: FeedEnt
   });
 }
 
+export function deleteFeedEntry(eventId: string, entryId: string): Promise<void> {
+  return request<void>(`/api/events/${eventId}/feed/${entryId}`, {
+    method: 'DELETE',
+  });
+}
+
 export function fetchAnalytics(eventId: string): Promise<AnalyticsResponse> {
   return request<AnalyticsResponse>(`/api/events/${eventId}/analytics`);
 }
