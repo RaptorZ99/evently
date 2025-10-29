@@ -73,35 +73,6 @@ services:
     ports:
       - "3000:80"
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: evently-pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@evently.local
-      PGADMIN_DEFAULT_PASSWORD: admin
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "5050:80"
-    profiles: ['ui']
-
-  mongo-express:
-    image: mongo-express:latest
-    container_name: evently-mongo-express
-    restart: unless-stopped
-    environment:
-      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017
-      ME_CONFIG_BASICAUTH_USERNAME: admin
-      ME_CONFIG_BASICAUTH_PASSWORD: admin
-    depends_on:
-      mongo:
-        condition: service_healthy
-    ports:
-      - "8081:8081"
-    profiles: ['ui']
-
 volumes:
   postgres-data:
   mongo-data:
