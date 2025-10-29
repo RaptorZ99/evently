@@ -1,8 +1,8 @@
 # Rapport Projet — Evently
 
 ## Membres du groupe
-Nom/prénom : …
-Nom/prénom : …
+Bourragué Maxence -/-
+Scarfone Louis
 
 ---
 
@@ -129,11 +129,28 @@ Le flux d’activité d’un événement est stocké dans MongoDB, avec des coll
 ```
 
 ### 4. Justification des Choix Techniques
-- **Répartition des données**: 
-  - PostgreSQL: entités cœur transactionnelles (User, Organizer, Venue, Event, Registration, Ticket) avec contraintes, index et transactions.
-  - MongoDB: flux d’activité (Comment, Checkin, Photo) à forte variabilité de schéma et volumétrie, lecture/écriture souples et agrégations analytiques.
-- **Modélisation MongoDB**: références (feed -> itemId) plutôt que documents imbriqués pour éviter la croissance non bornée d’un document unique et permettre des index/accès ciblés par type.
-- **Relations inter-bases**: liaison logique par `eventId` (UUID). La cohérence est maintenue au niveau applicatif: lors de la suppression d’un Event (Postgres), on supprime en parallèle le feed et ses items (Mongo). Les opérations sensibles côté Postgres sont transactionnelles.
+
+**Répartition des données**
+- PostgreSQL (ACID) pour le cœur transactionnel: `User`, `Organizer`, `Venue`, `Event`, `Registration`, `Ticket`. Besoin d’intégrité référentielle, de contraintes (unicités, checks, FK), de transactions atomiques (ex: inscription + émission de ticket), et de jointures fiables pour le reporting.
+- MongoDB (BASE) pour le flux d’activité temps réel lié aux événements: `comments`, `checkins`, `photos` et un `event_feeds` léger pour orchestrer l’affichage. Écritures fréquentes, schéma souple, agrégations simples et expérience live.
+
+**Modélisation MongoDB — références plutôt qu’imbrication**
+Nous stockons dans `event_feeds.entries` des références `{ type, itemId, ts }` vers des collections spécialisées (`comments`, `checkins`, `photos`) au lieu d’imbriquer tout le contenu dans un seul document.
+- Taille et croissance non bornées: un flux peut contenir des milliers d’items. En imbrication, le document du feed grossit indéfiniment jusqu’à la limite de 16 MB et devient coûteux à déplacer/mettre à jour. Les références gardent le feed léger et les contenus volumineux séparés.
+- Conflits d’écriture et hotspots: écrire/append dans un tableau imbriqué crée de la contention sur UN document « chaud ». Avec des références, chaque nouvel item est écrit dans sa collection dédiée, réduisant les conflits et améliorant le débit.
+- Lectures sélectives et pagination: on liste d’abord `entries` (types + ids), puis on charge seulement les items nécessaires (dernières N photos, commentaires paginés). On évite de rapatrier un énorme tableau imbriqué à chaque lecture.
+- Normalisation légère et réutilisation: un commentaire/photo/checkin est une entité adressable (modération, suppression, audit). La référence permet des opérations ciblées sans réécrire un gros document parent.
+- Indexation ciblée et analytics: index par collection (`comments.eventId`, `checkins.ts`, etc.) et agrégations dédiées. À l’inverse, indexer profondément des sous-documents imbriqués reste plus contraint et moins flexible.
+- Évolution indépendante des schémas: chaque type d’item peut évoluer (nouveaux champs, TTL, métadonnées) sans migration d’un tableau imbriqué géant.
+
+Quand privilégier l’imbrication ? Lorsque les sous-documents sont petits, en nombre borné, lus/écrits toujours avec le parent et nécessitent des garanties atomiques au niveau document. Ce n’est pas le cas d’un flux potentiellement long, multi-type et à fort taux d’append.
+
+**Relations inter-bases**
+- Clé d’articulation: les documents MongoDB portent `eventId` (UUID Postgres) comme clé applicative; pas de FK inter-SGBD, la cohérence est gérée au niveau service.
+- Cohérence forte là où nécessaire: les opérations métier critiques (capacity, paiement, ticket) vivent dans Postgres (transactions). Le flux MongoDB accepte une cohérence éventuelle (écritures asynchrones).
+- Cycle de vie: à la suppression d’un événement, une tâche applicative nettoie `event_feeds` et contenus associés via `eventId`.
+- Dénormalisation contrôlée: on peut stocker des champs d’affichage (ex. `eventTitle`) dans les items Mongo pour le confort UI, mais la source de vérité reste Postgres.
+
 
 ### 5. Exemples de Requêtes Complexes
 **PostgreSQL**
@@ -165,21 +182,68 @@ db.event_feeds.aggregate([
 ```
 
 ### 6. Stratégie de Sauvegarde
-- **PostgreSQL**
-  - Méthode: sauvegardes complètes régulières avec `pg_dump`/`pg_dumpall` pour export logique; pour des objectifs RPO bas, activer la réplication/archivage WAL et des sauvegardes physiques (base backups) pour la restauration point‑dans‑le‑temps (PITR).
-  - Fréquence: 
-    - Complète (base backup) hebdomadaire, 
-    - Incrémentale continue via WAL (archivage/streaming/replica), 
-    - `pg_dump` quotidien pour export applicatif (optionnel).
-  - Restauration: provisionner un nouveau nœud, restaurer le base backup, rejouer les WAL jusqu’au timestamp ciblé, valider l’intégrité puis basculer le trafic.
+Voici une réponse claire et argumentée pour la **stratégie de sauvegarde** des bases de données **PostgreSQL** et **MongoDB** 👇
 
-- **MongoDB**
-  - Méthode: déployer en replica set pour la haute dispo; snapshots du volume (LVM/EBS/ZFS) + `mongodump`/`mongorestore` pour exports logiques; en environnement managé, utiliser les backups natifs (Atlas Backup / Ops Manager).
-  - Fréquence: 
-    - Snapshots quotidiens, 
-    - Exports `mongodump` hebdomadaires pour portabilité, 
-    - Oplog activé (replica set) pour restaurations cohérentes.
-  - Restauration: restaurer le snapshot sur un membre, resynchroniser le replica set; pour `mongodump`, recréer les collections puis réindexer; vérifier la correspondance avec les UUID d’événements si des références inter-bases existent.
+---
 
-> Astuces opérationnelles: chiffrer les sauvegardes, stocker off‑site, tester périodiquement les procédures de restauration (DRP) et documenter les RTO/RPO cibles.
+## 6. Stratégie de Sauvegarde
 
+### 🔵 PostgreSQL
+
+#### **Méthode proposée**
+
+* **Outil** : `pg_dump` (sauvegarde logique)
+  Permet d’exporter la base sous forme de script SQL ou d’archive compressée. Cette méthode est simple à automatiser (cron job) et adaptée aux bases de taille moyenne.
+* **Alternative avancée** : **Sauvegarde continue (PITR)** via `pg_basebackup` + archivage des **WAL (Write Ahead Logs)**
+  → Cette approche permet une **récupération à un instant précis** (“Point In Time Recovery”), utile pour minimiser la perte de données en cas d’incident majeur.
+
+#### **Fréquence**
+
+* **Sauvegarde complète** : 1 fois par jour (nuit, faible charge serveur).
+* **Sauvegarde incrémentale** (via WAL) : en continu, chaque modification est archivée.
+  → Cela permet de restaurer la base à tout moment de la journée sans perdre les transactions récentes.
+
+#### **Procédure de restauration**
+
+1. Arrêter le service PostgreSQL.
+2. Restaurer la dernière sauvegarde complète avec `pg_restore` (ou réimporter le dump SQL).
+3. Réappliquer les journaux WAL si disponibles pour revenir à un instant précis.
+4. Redémarrer le service et vérifier l’intégrité des données.
+
+---
+
+### 🟢 MongoDB
+
+#### **Méthode proposée**
+
+* **Outil** : `mongodump` / `mongorestore`
+  Sauvegarde au format BSON, pratique pour exporter/restaurer des collections ou bases entières.
+* **Alternative de haute disponibilité** : **Replica Set**
+  → Un ensemble de serveurs (primaire + secondaires) maintient des copies synchronisées. En cas de panne du nœud principal, un autre prend le relais automatiquement, limitant la perte de données.
+
+#### **Fréquence**
+
+* **Sauvegarde complète** : chaque nuit (par `mongodump`).
+* **Sauvegarde différentielle/incrémentale** : possible via **oplog** (journal des opérations) si replica set activé.
+  → Permet de rejouer uniquement les modifications depuis la dernière sauvegarde complète.
+
+#### **Procédure de restauration**
+
+1. Si replica set : promotion automatique d’un nœud secondaire (aucune action manuelle nécessaire).
+2. Sinon, restauration manuelle via `mongorestore` :
+
+   * Stopper le service si nécessaire.
+   * Importer la dernière sauvegarde.
+   * Rejouer les opérations depuis l’oplog si disponible.
+3. Vérifier la cohérence et la connexion des applications clientes.
+
+---
+
+### 🧠 Synthèse comparative
+
+| Base de données | Méthode principale        | Fréquence                    | Avantage clé                     | Restauration                           |
+| --------------- | ------------------------- | ---------------------------- | -------------------------------- | -------------------------------------- |
+| **PostgreSQL**  | `pg_dump` + WAL           | Quotidienne + continue       | Restauration à un instant précis | `pg_restore` + WAL                     |
+| **MongoDB**     | `mongodump` + Replica Set | Quotidienne + journaux oplog | Haute disponibilité automatique  | `mongorestore` ou failover automatique |
+
+---
