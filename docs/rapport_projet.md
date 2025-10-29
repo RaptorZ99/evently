@@ -13,15 +13,11 @@ Evently est une application de gestion d’événements combinant PostgreSQL pou
 
 **MCD (Modèle Conceptuel de Données)**
 
-![MCD](./assets/mcd.png)
-
-> Placez la capture de votre MCD dans `docs/assets/mcd.png`.
+![MCD](./MCD_Evently.png)
 
 **MLD (Modèle Logique de Données)**
 
-![MLD](./assets/mld.png)
-
-> Placez la capture de votre MLD dans `docs/assets/mld.png`.
+![MLD](./MLD_Evently.png)
 
 **MPD (Modèle Physique de Données)**
 
