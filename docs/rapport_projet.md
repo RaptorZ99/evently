@@ -181,11 +181,6 @@ db.event_feeds.aggregate([
 ]);
 ```
 
-### 6. Stratégie de Sauvegarde
-Voici une réponse claire et argumentée pour la **stratégie de sauvegarde** des bases de données **PostgreSQL** et **MongoDB** 👇
-
----
-
 ## 6. Stratégie de Sauvegarde
 
 ### 🔵 PostgreSQL

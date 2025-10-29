@@ -6,12 +6,13 @@ import { randomUUID } from 'crypto';
 async function main() {
   console.log('Seeding database (raw SQL + Mongo)...');
 
+  // Check if seeding is necessary
   const forceSeed = process.env.FORCE_SEED === 'true';
 
   const [{ count: existingUsers } ] = await prisma.$queryRaw<Array<{ count: number }>>`
     SELECT COUNT(*)::int AS count FROM "User"
   `;
-
+  // Skip seeding if data exists and not forcing
   if (existingUsers > 0 && !forceSeed) {
     console.log('Seed skipped: data already present. Set FORCE_SEED=true to overwrite.');
     return;
