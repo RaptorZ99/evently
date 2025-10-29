@@ -20,6 +20,7 @@ export function createApp() {
   );
   app.use(express.json());
 
+  // Morgan logging only in non-test environments
   if (env.nodeEnv !== 'test') {
     app.use(morgan('dev'));
   }
@@ -34,6 +35,7 @@ export function createApp() {
   });
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { explorer: true }));
 
+  // API routes
   app.use('/api', apiRouter);
 
   app.use(notFound);

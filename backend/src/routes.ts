@@ -7,6 +7,7 @@ import { venuesRouter } from './modules/venues/venue.router';
 
 export const apiRouter = Router();
 
+// Mount module routers on specific paths
 apiRouter.use('/events', eventsRouter);
 apiRouter.use('/registrations', registrationsRouter);
 apiRouter.use('/users', usersRouter);
