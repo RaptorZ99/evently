@@ -13,91 +13,109 @@ Evently est une application de gestion d’événements combinant PostgreSQL pou
 
 **MCD (Modèle Conceptuel de Données)**
 
-![MCD](./assets/mcd.png)
-
-> Placez la capture de votre MCD dans `docs/assets/mcd.png`.
+![MCD](./MCD_Evently.png)
 
 **MLD (Modèle Logique de Données)**
 
-![MLD](./assets/mld.png)
-
-> Placez la capture de votre MLD dans `docs/assets/mld.png`.
+![MLD](./MLD_Evently.png)
 
 **MPD (Modèle Physique de Données)**
 
 ```sql
--- Extrait du script de création (PostgreSQL)
+-- Script de création (PostgreSQL)
+
+-- CreateEnums
 CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'USER');
 CREATE TYPE "EventStatus" AS ENUM ('DRAFT', 'PUBLISHED', 'CLOSED');
 CREATE TYPE "RegistrationStatus" AS ENUM ('PENDING', 'CONFIRMED', 'CANCELLED');
 CREATE TYPE "TicketStatus" AS ENUM ('ISSUED', 'USED', 'REFUNDED');
 
+-- CreateTables
 CREATE TABLE "User" (
-  "id" TEXT PRIMARY KEY,
-  "email" TEXT NOT NULL UNIQUE,
-  "name" TEXT NOT NULL,
-  "role" "UserRole" NOT NULL DEFAULT 'USER',
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL
-);
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "role" "UserRole" NOT NULL DEFAULT 'USER',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
+    CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
 CREATE TABLE "Organizer" (
-  "id" TEXT PRIMARY KEY,
-  "name" TEXT NOT NULL,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-  UNIQUE ("name")
-);
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
+    CONSTRAINT "Organizer_pkey" PRIMARY KEY ("id")
+);
 CREATE TABLE "Venue" (
-  "id" TEXT PRIMARY KEY,
-  "name" TEXT NOT NULL,
-  "address" TEXT NOT NULL,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-  UNIQUE ("name", "address")
-);
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "address" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
+    CONSTRAINT "Venue_pkey" PRIMARY KEY ("id")
+);
 CREATE TABLE "Event" (
-  "id" TEXT PRIMARY KEY,
-  "title" TEXT NOT NULL,
-  "description" TEXT,
-  "startAt" TIMESTAMP(3) NOT NULL,
-  "endAt" TIMESTAMP(3) NOT NULL,
-  "capacity" INTEGER NOT NULL,
-  "status" "EventStatus" NOT NULL DEFAULT 'DRAFT',
-  "organizerId" TEXT NOT NULL REFERENCES "Organizer"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  "venueId" TEXT NOT NULL REFERENCES "Venue"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-  CONSTRAINT "Event_capacity_chk" CHECK ("capacity" >= 0),
-  CONSTRAINT "Event_dates_chk" CHECK ("endAt" > "startAt"),
-  UNIQUE ("title", "startAt")
-);
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "startAt" TIMESTAMP(3) NOT NULL,
+    "endAt" TIMESTAMP(3) NOT NULL,
+    "capacity" INTEGER NOT NULL,
+    "status" "EventStatus" NOT NULL DEFAULT 'DRAFT',
+    "organizerId" TEXT NOT NULL,
+    "venueId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
+    CONSTRAINT "Event_pkey" PRIMARY KEY ("id")
+);
 CREATE TABLE "Registration" (
-  "id" TEXT PRIMARY KEY,
-  "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  "eventId" TEXT NOT NULL REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  "status" "RegistrationStatus" NOT NULL DEFAULT 'PENDING',
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE ("userId", "eventId")
-);
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "status" "RegistrationStatus" NOT NULL DEFAULT 'PENDING',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
+    CONSTRAINT "Registration_pkey" PRIMARY KEY ("id")
+);
 CREATE TABLE "Ticket" (
-  "id" TEXT PRIMARY KEY,
-  "registrationId" TEXT NOT NULL REFERENCES "Registration"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  "price" DECIMAL(10,2) NOT NULL,
-  "purchasedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "status" "TicketStatus" NOT NULL DEFAULT 'ISSUED',
-  UNIQUE ("registrationId")
+    "id" TEXT NOT NULL,
+    "registrationId" TEXT NOT NULL,
+    "price" DECIMAL(10,2) NOT NULL,
+    "purchasedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "status" "TicketStatus" NOT NULL DEFAULT 'ISSUED',
+
+    CONSTRAINT "Ticket_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateIndexes
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "User_role_idx" ON "User"("role");
+CREATE UNIQUE INDEX "Organizer_name_key" ON "Organizer"("name");
 CREATE INDEX "Event_startAt_idx" ON "Event"("startAt");
 CREATE INDEX "Event_status_idx" ON "Event"("status");
+CREATE UNIQUE INDEX "Event_title_startAt_key" ON "Event"("title", "startAt");
 CREATE INDEX "Registration_eventId_idx" ON "Registration"("eventId");
+CREATE UNIQUE INDEX "Registration_userId_eventId_key" ON "Registration"("userId", "eventId");
 CREATE INDEX "Ticket_registrationId_idx" ON "Ticket"("registrationId");
+CREATE UNIQUE INDEX "Ticket_registrationId_key" ON "Ticket"("registrationId");
+CREATE UNIQUE INDEX "Venue_name_address_key" ON "Venue"("name", "address");
+
+-- AddForeignKeys
+ALTER TABLE "Event" ADD CONSTRAINT "Event_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "Organizer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Event" ADD CONSTRAINT "Event_venueId_fkey" FOREIGN KEY ("venueId") REFERENCES "Venue"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Registration" ADD CONSTRAINT "Registration_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Registration" ADD CONSTRAINT "Registration_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Ticket" ADD CONSTRAINT "Ticket_registrationId_fkey" FOREIGN KEY ("registrationId") REFERENCES "Registration"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- ComplementaryChecks
+ALTER TABLE "Event" ADD CONSTRAINT "Event_capacity_chk" CHECK ("capacity" >= 0);
+ALTER TABLE "Event" ADD CONSTRAINT "Event_dates_chk" CHECK ("endAt" > "startAt");
+ALTER TABLE "Ticket" ADD CONSTRAINT "Ticket_price_chk" CHECK ("price" >= 0);
 ```
 
 ### 3. Architecture MongoDB
@@ -143,7 +161,7 @@ Nous stockons dans `event_feeds.entries` des références `{ type, itemId, ts }`
 - Indexation ciblée et analytics: index par collection (`comments.eventId`, `checkins.ts`, etc.) et agrégations dédiées. À l’inverse, indexer profondément des sous-documents imbriqués reste plus contraint et moins flexible.
 - Évolution indépendante des schémas: chaque type d’item peut évoluer (nouveaux champs, TTL, métadonnées) sans migration d’un tableau imbriqué géant.
 
-Quand privilégier l’imbrication ? Lorsque les sous-documents sont petits, en nombre borné, lus/écrits toujours avec le parent et nécessitent des garanties atomiques au niveau document. Ce n’est pas le cas d’un flux potentiellement long, multi-type et à fort taux d’append.
+L'imbrication est à privilégier lorsque les sous-documents sont petits, en nombre borné, lus/écrits toujours avec le parent et nécessitent des garanties atomiques au niveau document. Ce n’est pas le cas d’un flux potentiellement long, multi-type et à fort taux d’append.
 
 **Relations inter-bases**
 - Clé d’articulation: les documents MongoDB portent `eventId` (UUID Postgres) comme clé applicative; pas de FK inter-SGBD, la cohérence est gérée au niveau service.
@@ -183,7 +201,7 @@ db.event_feeds.aggregate([
 
 ## 6. Stratégie de Sauvegarde
 
-### 🔵 PostgreSQL
+### PostgreSQL
 
 #### **Méthode proposée**
 
@@ -207,7 +225,7 @@ db.event_feeds.aggregate([
 
 ---
 
-### 🟢 MongoDB
+### MongoDB
 
 #### **Méthode proposée**
 
@@ -234,7 +252,7 @@ db.event_feeds.aggregate([
 
 ---
 
-### 🧠 Synthèse comparative
+### Synthèse comparative
 
 | Base de données | Méthode principale        | Fréquence                    | Avantage clé                     | Restauration                           |
 | --------------- | ------------------------- | ---------------------------- | -------------------------------- | -------------------------------------- |
