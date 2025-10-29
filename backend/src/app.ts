@@ -6,6 +6,8 @@ import { env } from './config/env';
 import { apiRouter } from './routes';
 import { notFound } from './middlewares/notFound';
 import { errorHandler } from './middlewares/errorHandler';
+import swaggerUi from 'swagger-ui-express';
+import { openapiSpec } from './docs/openapi';
 
 export function createApp() {
   const app = express();
@@ -25,6 +27,12 @@ export function createApp() {
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
+
+  // OpenAPI spec and Swagger UI
+  app.get('/openapi.json', (_req, res) => {
+    res.json(openapiSpec);
+  });
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { explorer: true }));
 
   app.use('/api', apiRouter);
 
