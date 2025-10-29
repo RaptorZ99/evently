@@ -1,58 +1,57 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
+import { randomUUID } from 'crypto';
 import { HttpError } from '../../utils/httpError';
 import { createUserSchema } from './user.schema';
 
 export async function listUsers() {
-  return prisma.user.findMany({
-    orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-    },
-  });
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; email: string; role: string }>>`
+    SELECT id, name, email, role
+    FROM "User"
+    ORDER BY name ASC
+  `;
+  return rows;
 }
 
 export async function createUser(input: unknown) {
   const data = createUserSchema.parse(input);
 
-  try {
-    return await prisma.user.create({
-      data: {
-        email: data.email.toLowerCase(),
-        name: data.name.trim(),
-        role: data.role ?? 'USER',
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-      },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw HttpError.conflict('Email already exists');
-    }
+  const email = data.email.toLowerCase();
+  const name = data.name.trim();
+  const role = data.role ?? 'USER';
 
-    throw error;
+  const id = randomUUID();
+  const inserted = await prisma.$queryRaw<Array<{ id: string; name: string; email: string; role: string }>>`
+    INSERT INTO "User" (id, email, name, role, "updatedAt")
+    VALUES (${id}, ${email}, ${name}, ${role}::"UserRole", NOW())
+    ON CONFLICT (email) DO NOTHING
+    RETURNING id, name, email, role
+  `;
+
+  if (inserted.length === 0) {
+    throw HttpError.conflict('Email already exists');
   }
+
+  return inserted[0];
 }
 
 export async function deleteUser(id: string) {
-  try {
-    await prisma.user.delete({ where: { id } });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2003') {
-        throw HttpError.conflict('User is linked to registrations');
-      }
-      if (error.code === 'P2025') {
-        throw HttpError.notFound('User not found');
-      }
-    }
-    throw error;
+  const [{ count }] = await prisma.$queryRaw<Array<{ count: number }>>`
+    SELECT COUNT(*)::int AS count
+    FROM "Registration"
+    WHERE "userId" = ${id}
+  `;
+
+  if (count > 0) {
+    throw HttpError.conflict('User is linked to registrations');
+  }
+
+  const deleted = await prisma.$queryRaw<Array<{ id: string }>>`
+    DELETE FROM "User"
+    WHERE id = ${id}
+    RETURNING id
+  `;
+
+  if (deleted.length === 0) {
+    throw HttpError.notFound('User not found');
   }
 }

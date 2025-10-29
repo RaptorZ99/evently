@@ -247,8 +247,10 @@ export async function getEventFeed(eventId: string) {
 }
 
 export async function appendFeedEntry(eventId: string, payload: unknown) {
-  const event = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!event) {
+  const event = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Event" WHERE id = ${eventId}
+  `;
+  if (event.length === 0) {
     throw HttpError.notFound('Event not found');
   }
 

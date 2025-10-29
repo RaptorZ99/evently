@@ -1,54 +1,55 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
+import { randomUUID } from 'crypto';
 import { HttpError } from '../../utils/httpError';
 import { createVenueSchema } from './venue.schema';
 
 export async function listVenues() {
-  return prisma.venue.findMany({
-    orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      address: true,
-    },
-  });
+  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; address: string }>>`
+    SELECT id, name, address
+    FROM "Venue"
+    ORDER BY name ASC
+  `;
+  return rows;
 }
 
 export async function createVenue(input: unknown) {
   const data = createVenueSchema.parse(input);
 
-  try {
-    return await prisma.venue.create({
-      data: {
-        name: data.name.trim(),
-        address: data.address.trim(),
-      },
-      select: {
-        id: true,
-        name: true,
-        address: true,
-      },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw HttpError.conflict('Venue already exists');
-    }
-    throw error;
+  const name = data.name.trim();
+  const address = data.address.trim();
+  const id = randomUUID();
+  const inserted = await prisma.$queryRaw<Array<{ id: string; name: string; address: string }>>`
+    INSERT INTO "Venue" (id, name, address, "updatedAt")
+    VALUES (${id}, ${name}, ${address}, NOW())
+    ON CONFLICT (name, address) DO NOTHING
+    RETURNING id, name, address
+  `;
+
+  if (inserted.length === 0) {
+    throw HttpError.conflict('Venue already exists');
   }
+
+  return inserted[0];
 }
 
 export async function deleteVenue(id: string) {
-  try {
-    await prisma.venue.delete({ where: { id } });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === 'P2003') {
-        throw HttpError.conflict('Venue is attached to existing events');
-      }
-      if (error.code === 'P2025') {
-        throw HttpError.notFound('Venue not found');
-      }
-    }
-    throw error;
+  const [{ count }] = await prisma.$queryRaw<Array<{ count: number }>>`
+    SELECT COUNT(*)::int AS count
+    FROM "Event"
+    WHERE "venueId" = ${id}
+  `;
+
+  if (count > 0) {
+    throw HttpError.conflict('Venue is attached to existing events');
+  }
+
+  const deleted = await prisma.$queryRaw<Array<{ id: string }>>`
+    DELETE FROM "Venue"
+    WHERE id = ${id}
+    RETURNING id
+  `;
+
+  if (deleted.length === 0) {
+    throw HttpError.notFound('Venue not found');
   }
 }
