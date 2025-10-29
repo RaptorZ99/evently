@@ -2,6 +2,10 @@
   "name": "evently",
   "private": true,
   "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "npm --prefix backend run dev & npm --prefix frontend run dev & wait",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down -v",
     "docker:logs": "docker compose logs -f backend",
