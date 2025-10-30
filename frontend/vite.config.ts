@@ -1,25 +1,13 @@
 import react from '@vitejs/plugin-react';
-import tailwindcss from 'tailwindcss';
-import tailwindcssPostcss from '@tailwindcss/postcss';
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite';
-
-const tailwindAdapter = {
-  name: 'tailwindcss',
-  config: () => {
-    void tailwindcss;
-    return {
-      css: {
-        postcss: {
-          plugins: [tailwindcssPostcss()],
-        },
-      },
-    };
-  },
-};
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindAdapter],
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
   server: {
     host: '0.0.0.0',
     port: 3000,
