@@ -9,7 +9,6 @@ COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/tsconfig*.json ./
 COPY frontend/vite.config.ts ./
-COPY frontend/postcss.config.js ./
 COPY frontend/index.html ./
 COPY frontend/src ./src
 COPY frontend/public ./public
